@@ -6,6 +6,34 @@ from plotly.subplots import make_subplots
 import numpy as np
 from scipy import stats
 import io
+from datetime import datetime
+import os
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float
+from sqlalchemy.orm import declarative_base, sessionmaker
+import json
+
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+Base = declarative_base()
+
+class SavedComparison(Base):
+    __tablename__ = 'saved_comparisons'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    num_builds = Column(Integer)
+    build_names = Column(Text)
+    data_json = Column(Text)
+    metrics_json = Column(Text)
+
+if DATABASE_URL:
+    engine = create_engine(DATABASE_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+else:
+    engine = None
+    Session = None
 
 st.set_page_config(page_title="Battery Discharge Analysis", layout="wide")
 
@@ -54,65 +82,506 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None):
     metrics = {}
     
     if voltage_col and voltage_col in df.columns:
-        metrics['Max Voltage (V)'] = df[voltage_col].max()
-        metrics['Min Voltage (V)'] = df[voltage_col].min()
-        metrics['Average Voltage (V)'] = df[voltage_col].mean()
+        metrics['Max Voltage (V)'] = float(df[voltage_col].max())
+        metrics['Min Voltage (V)'] = float(df[voltage_col].min())
+        metrics['Average Voltage (V)'] = float(df[voltage_col].mean())
         metrics['Voltage Range (V)'] = metrics['Max Voltage (V)'] - metrics['Min Voltage (V)']
     
     if current_col and current_col in df.columns:
-        metrics['Max Current (A)'] = df[current_col].max()
-        metrics['Average Current (A)'] = df[current_col].mean()
+        metrics['Max Current (A)'] = float(df[current_col].max())
+        metrics['Average Current (A)'] = float(df[current_col].mean())
     
     if time_col and time_col in df.columns:
-        metrics['Total Time (min)'] = (df[time_col].max() - df[time_col].min())
+        time_series = df[time_col]
         
-        if voltage_col and voltage_col in df.columns:
+        if not pd.api.types.is_numeric_dtype(time_series) and not pd.api.types.is_datetime64_any_dtype(time_series) and not pd.api.types.is_timedelta64_dtype(time_series):
+            try:
+                time_series = pd.to_numeric(time_series, errors='raise')
+            except:
+                try:
+                    time_series = pd.to_timedelta(time_series)
+                except:
+                    try:
+                        time_series = pd.to_datetime(time_series)
+                    except:
+                        return metrics
+        
+        time_max = time_series.max()
+        time_min = time_series.min()
+        time_range_raw = time_max - time_min
+        
+        if pd.api.types.is_timedelta64_dtype(time_range_raw):
+            time_range_minutes = time_range_raw.total_seconds() / 60
+        elif isinstance(time_range_raw, pd.Timedelta):
+            time_range_minutes = time_range_raw.total_seconds() / 60
+        else:
+            try:
+                time_range_minutes = float(time_range_raw)
+            except:
+                time_range_minutes = 0
+        
+        metrics['Total Time (min)'] = time_range_minutes
+        
+        if voltage_col and voltage_col in df.columns and time_range_minutes > 0:
             voltage_drop = df[voltage_col].iloc[0] - df[voltage_col].iloc[-1]
-            time_range = df[time_col].iloc[-1] - df[time_col].iloc[0]
-            if time_range > 0:
-                metrics['Discharge Rate (V/min)'] = voltage_drop / time_range
+            metrics['Discharge Rate (V/min)'] = float(voltage_drop / time_range_minutes)
     
     if voltage_col and current_col and voltage_col in df.columns and current_col in df.columns:
         power = df[voltage_col] * df[current_col].abs()
-        metrics['Average Power (W)'] = power.mean()
-        metrics['Max Power (W)'] = power.max()
+        metrics['Average Power (W)'] = float(power.mean())
+        metrics['Max Power (W)'] = float(power.max())
         
         if time_col and time_col in df.columns and len(df) > 1:
-            time_diff = df[time_col].diff().fillna(0)
-            energy = (power * time_diff).sum() / 60
-            metrics['Total Energy (Wh)'] = energy
+            time_diff = time_series.diff().fillna(0)
+            
+            if pd.api.types.is_timedelta64_dtype(time_diff):
+                time_diff_minutes = time_diff.dt.total_seconds() / 60
+            else:
+                time_diff_minutes = time_diff
+            
+            energy = (power * time_diff_minutes).sum() / 60
+            metrics['Total Energy (Wh)'] = float(energy)
     
     return metrics
 
-st.sidebar.header("📁 Data Upload")
-st.sidebar.markdown("Upload 2-3 battery discharge data files for comparison")
+def export_to_excel(dataframes, build_names, metrics_df):
+    """Export all data and metrics to Excel file"""
+    output = io.BytesIO()
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for df, name in zip(dataframes, build_names):
+            sheet_name = name[:31]
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        if metrics_df is not None:
+            metrics_df.to_excel(writer, sheet_name='Metrics_Comparison')
+    
+    return output.getvalue()
 
-num_builds = st.sidebar.radio("Number of builds to compare:", [2, 3], index=0)
+def export_to_csv(dataframes, build_names, metrics_df):
+    """Export metrics comparison to CSV"""
+    if metrics_df is not None:
+        return metrics_df.to_csv(index=True).encode('utf-8')
+    return None
+
+def calculate_advanced_analytics(df, time_col, voltage_col, current_col=None):
+    """Calculate advanced battery analytics"""
+    analytics = {}
+    
+    if not voltage_col or voltage_col not in df.columns:
+        return analytics
+    
+    if time_col and time_col in df.columns and len(df) > 10:
+        voltage_series = df[voltage_col].values
+        time_series_raw = df[time_col].values
+        
+        try:
+            if pd.api.types.is_datetime64_any_dtype(df[time_col]):
+                time_series = (pd.to_datetime(df[time_col]) - pd.to_datetime(df[time_col].iloc[0])).dt.total_seconds() / 60
+                time_series = time_series.values
+            elif pd.api.types.is_timedelta64_dtype(df[time_col]):
+                time_series = df[time_col].dt.total_seconds().values / 60
+            elif pd.api.types.is_numeric_dtype(df[time_col]):
+                time_series = time_series_raw.astype(float)
+            else:
+                try:
+                    time_series = pd.to_numeric(df[time_col], errors='raise').values
+                except:
+                    try:
+                        time_parsed = pd.to_timedelta(df[time_col])
+                        time_series = time_parsed.dt.total_seconds().values / 60
+                    except:
+                        try:
+                            time_parsed = pd.to_datetime(df[time_col])
+                            time_series = (time_parsed - time_parsed.iloc[0]).dt.total_seconds() / 60
+                            time_series = time_series.values
+                        except:
+                            return analytics
+        except Exception as e:
+            return analytics
+        
+        initial_voltage = voltage_series[0]
+        final_voltage = voltage_series[-1]
+        total_time = time_series[-1] - time_series[0]
+        
+        analytics['Initial Voltage (V)'] = initial_voltage
+        analytics['Final Voltage (V)'] = final_voltage
+        analytics['Total Voltage Drop (V)'] = initial_voltage - final_voltage
+        
+        if total_time > 0:
+            analytics['Average Degradation Rate (mV/min)'] = (initial_voltage - final_voltage) * 1000 / total_time
+            
+            voltage_at_80_pct = initial_voltage * 0.8
+            indices_below_80 = np.where(voltage_series <= voltage_at_80_pct)[0]
+            if len(indices_below_80) > 0:
+                time_to_80_pct = time_series[indices_below_80[0]] - time_series[0]
+                analytics['Time to 80% Voltage (min)'] = time_to_80_pct
+            
+            voltage_at_50_pct = initial_voltage * 0.5
+            indices_below_50 = np.where(voltage_series <= voltage_at_50_pct)[0]
+            if len(indices_below_50) > 0:
+                time_to_50_pct = time_series[indices_below_50[0]] - time_series[0]
+                analytics['Time to 50% Voltage (min)'] = time_to_50_pct
+        
+        time_diffs = np.diff(time_series)
+        voltage_diffs = np.diff(voltage_series)
+        
+        valid_indices = time_diffs > 0
+        if np.any(valid_indices):
+            instantaneous_rates = np.zeros_like(voltage_diffs)
+            instantaneous_rates[valid_indices] = voltage_diffs[valid_indices] / time_diffs[valid_indices]
+            
+            valid_rates = instantaneous_rates[valid_indices]
+            if len(valid_rates) > 0:
+                analytics['Max Discharge Rate (V/min)'] = np.max(np.abs(valid_rates))
+                analytics['Min Discharge Rate (V/min)'] = np.min(np.abs(valid_rates))
+        
+        mid_idx = len(voltage_series) // 2
+        analytics['Mid-Point Voltage (V)'] = voltage_series[mid_idx]
+        
+        voltage_range = initial_voltage - final_voltage
+        if total_time > 0:
+            if voltage_range > 0:
+                avg_degradation_rate_per_min = voltage_range / total_time
+                
+                eol_voltage = initial_voltage * 0.7
+                
+                if final_voltage <= eol_voltage:
+                    estimated_eol_time = total_time
+                    analytics['Estimated Cycle Life (min)'] = estimated_eol_time
+                    analytics['Estimated Cycle Life (hours)'] = estimated_eol_time / 60
+                    analytics['Battery Status'] = 'End of Life Reached'
+                elif avg_degradation_rate_per_min > 0:
+                    remaining_voltage_drop = initial_voltage - eol_voltage
+                    estimated_eol_time = remaining_voltage_drop / avg_degradation_rate_per_min
+                    analytics['Estimated Cycle Life (min)'] = estimated_eol_time
+                    analytics['Estimated Cycle Life (hours)'] = estimated_eol_time / 60
+                    analytics['Battery Status'] = 'Active'
+                else:
+                    analytics['Battery Status'] = 'Stable (No Degradation Detected)'
+            
+            if initial_voltage > 0:
+                capacity_retention = (final_voltage / initial_voltage) * 100
+                analytics['Current Capacity Retention (%)'] = capacity_retention
+        
+        if current_col and current_col in df.columns:
+            current_series = df[current_col].values
+            power_series = voltage_series * np.abs(current_series)
+            
+            analytics['Peak Power (W)'] = np.max(power_series)
+            analytics['Average Power (W)'] = np.mean(power_series)
+            
+            if len(time_diffs) > 0 and np.any(valid_indices):
+                valid_time_diffs = time_diffs[valid_indices]
+                valid_power = power_series[:-1][valid_indices]
+                
+                energy_wh = np.sum(valid_power * valid_time_diffs) / 60
+                analytics['Total Energy Discharged (Wh)'] = energy_wh
+                
+                if total_time > 0:
+                    analytics['Average Discharge Power (W)'] = energy_wh * 60 / total_time
+                
+                theoretical_energy = initial_voltage * np.mean(np.abs(current_series)) * total_time / 60
+                if theoretical_energy > 0:
+                    analytics['Energy Efficiency (%)'] = (energy_wh / theoretical_energy) * 100
+                
+                valid_current = current_series[:-1][valid_indices]
+                coulombic_efficiency = np.sum(np.abs(valid_current) * valid_time_diffs) / 60
+                analytics['Coulombic Efficiency (Ah)'] = coulombic_efficiency
+    
+    return analytics
+
+def detect_anomalies(df, voltage_col, time_col=None):
+    """Detect anomalies in discharge data using statistical methods"""
+    anomalies = []
+    
+    if not voltage_col or voltage_col not in df.columns:
+        return anomalies, []
+    
+    voltage_series = df[voltage_col].values
+    
+    if len(voltage_series) < 10:
+        return anomalies, []
+    
+    voltage_diffs = np.diff(voltage_series)
+    
+    sudden_drops = []
+    threshold = 3 * np.std(voltage_diffs)
+    mean_diff = np.mean(voltage_diffs)
+    
+    for i, diff in enumerate(voltage_diffs):
+        if diff < mean_diff - threshold:
+            sudden_drops.append(i + 1)
+            anomalies.append(f"Sudden voltage drop at index {i+1}: {diff:.4f}V")
+    
+    rolling_window = min(20, len(voltage_series) // 10)
+    rolling_mean = pd.Series(voltage_series).rolling(window=rolling_window, center=True).mean()
+    rolling_std = pd.Series(voltage_series).rolling(window=rolling_window, center=True).std()
+    
+    outlier_indices = []
+    for i in range(len(voltage_series)):
+        if not np.isnan(rolling_mean.iloc[i]) and not np.isnan(rolling_std.iloc[i]):
+            if abs(voltage_series[i] - rolling_mean.iloc[i]) > 3 * rolling_std.iloc[i]:
+                outlier_indices.append(i)
+                anomalies.append(f"Statistical outlier at index {i}: {voltage_series[i]:.4f}V")
+    
+    if len(voltage_series) > 20:
+        expected_trend = np.linspace(voltage_series[0], voltage_series[-1], len(voltage_series))
+        deviations = voltage_series - expected_trend
+        
+        large_deviations = np.where(np.abs(deviations) > 2 * np.std(deviations))[0]
+        for idx in large_deviations:
+            if idx not in outlier_indices:
+                anomalies.append(f"Unexpected behavior at index {idx}: deviation {deviations[idx]:.4f}V")
+    
+    all_anomaly_indices = sorted(set(sudden_drops + outlier_indices + list(large_deviations) if len(voltage_series) > 20 else sudden_drops + outlier_indices))
+    
+    return anomalies, all_anomaly_indices
+
+def save_comparison_to_db(name, dataframes, build_names, metrics_df):
+    """Save comparison to database"""
+    if not Session:
+        return False, "Database not configured"
+    
+    try:
+        session = Session()
+        
+        data_list = []
+        for df in dataframes:
+            data_list.append(df.to_json(orient='split'))
+        
+        metrics_json = metrics_df.to_json(orient='split') if metrics_df is not None else None
+        
+        comparison = SavedComparison(
+            name=name,
+            num_builds=len(build_names),
+            build_names=json.dumps(build_names),
+            data_json=json.dumps(data_list),
+            metrics_json=metrics_json
+        )
+        
+        session.add(comparison)
+        session.commit()
+        session.close()
+        
+        return True, "Comparison saved successfully"
+    except Exception as e:
+        return False, f"Error saving comparison: {str(e)}"
+
+def load_comparison_from_db(comparison_id):
+    """Load comparison from database"""
+    if not Session:
+        return None, None, None, "Database not configured"
+    
+    try:
+        session = Session()
+        comparison = session.query(SavedComparison).filter_by(id=comparison_id).first()
+        
+        if not comparison:
+            session.close()
+            return None, None, None, "Comparison not found"
+        
+        build_names = json.loads(comparison.build_names)
+        data_list = json.loads(comparison.data_json)
+        
+        dataframes = []
+        for data_json in data_list:
+            df = pd.read_json(io.StringIO(data_json), orient='split')
+            dataframes.append(df)
+        
+        metrics_df = None
+        if comparison.metrics_json:
+            metrics_df = pd.read_json(io.StringIO(comparison.metrics_json), orient='split')
+        
+        session.close()
+        
+        return dataframes, build_names, metrics_df, "Loaded successfully"
+    except Exception as e:
+        return None, None, None, f"Error loading comparison: {str(e)}"
+
+def get_all_saved_comparisons():
+    """Get list of all saved comparisons"""
+    if not Session:
+        return []
+    
+    try:
+        session = Session()
+        comparisons = session.query(SavedComparison).order_by(SavedComparison.created_at.desc()).all()
+        
+        result = []
+        for comp in comparisons:
+            result.append({
+                'id': comp.id,
+                'name': comp.name,
+                'created_at': comp.created_at,
+                'num_builds': comp.num_builds
+            })
+        
+        session.close()
+        return result
+    except Exception as e:
+        st.error(f"Error fetching saved comparisons: {str(e)}")
+        return []
+
+def delete_comparison_from_db(comparison_id):
+    """Delete a comparison from database"""
+    if not Session:
+        return False, "Database not configured"
+    
+    try:
+        session = Session()
+        comparison = session.query(SavedComparison).filter_by(id=comparison_id).first()
+        
+        if comparison:
+            session.delete(comparison)
+            session.commit()
+            session.close()
+            return True, "Comparison deleted successfully"
+        else:
+            session.close()
+            return False, "Comparison not found"
+    except Exception as e:
+        return False, f"Error deleting comparison: {str(e)}"
+
+st.sidebar.header("📁 Data Input Mode")
+
+data_mode = st.sidebar.radio(
+    "Select input mode:",
+    ["Upload Files", "Real-Time Streaming"],
+    key='data_mode'
+)
+
+st.sidebar.markdown("---")
+
+if DATABASE_URL and Session:
+    st.sidebar.markdown("### 💾 Load Saved Comparison")
+    saved_comparisons = get_all_saved_comparisons()
+    
+    if saved_comparisons:
+        comparison_options = {f"{comp['name']} ({comp['created_at'].strftime('%Y-%m-%d %H:%M')})": comp['id'] 
+                             for comp in saved_comparisons}
+        
+        selected_comparison = st.sidebar.selectbox(
+            "Select a saved comparison:",
+            options=['-- New Comparison --'] + list(comparison_options.keys()),
+            key='load_comparison'
+        )
+        
+        if selected_comparison != '-- New Comparison --':
+            comparison_id = comparison_options[selected_comparison]
+            
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                if st.button("📂 Load", key='load_btn'):
+                    loaded_dfs, loaded_names, loaded_metrics, msg = load_comparison_from_db(comparison_id)
+                    if loaded_dfs:
+                        st.session_state['loaded_dataframes'] = loaded_dfs
+                        st.session_state['loaded_build_names'] = loaded_names
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            
+            with col2:
+                if st.button("🗑️ Delete", key='delete_btn'):
+                    success, msg = delete_comparison_from_db(comparison_id)
+                    if success:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+    
+    st.sidebar.markdown("---")
 
 uploaded_files = []
 build_names = []
 dataframes = []
 
-for i in range(num_builds):
-    st.sidebar.markdown(f"### Build {i+1}")
-    build_name = st.sidebar.text_input(f"Build {i+1} name:", value=f"Build {i+1}", key=f"name_{i}")
-    uploaded_file = st.sidebar.file_uploader(
-        f"Upload discharge data for {build_name}",
-        type=['csv', 'xlsx', 'xls'],
-        key=f"file_{i}"
-    )
+if data_mode == "Upload Files":
+    st.sidebar.markdown("Upload 2-3 battery discharge data files for comparison")
     
-    if uploaded_file:
-        uploaded_files.append(uploaded_file)
-        build_names.append(build_name)
-        df = load_data(uploaded_file)
-        if df is not None:
-            dataframes.append(df)
+    num_builds = st.sidebar.radio("Number of builds to compare:", [2, 3], index=0)
+    
+    if 'loaded_dataframes' in st.session_state and 'loaded_build_names' in st.session_state:
+        dataframes = st.session_state['loaded_dataframes']
+        build_names = st.session_state['loaded_build_names']
+        num_builds = len(dataframes)
+        
+        st.sidebar.success(f"✅ Loaded {num_builds} builds from database")
+        
+        if st.sidebar.button("Clear Loaded Data"):
+            del st.session_state['loaded_dataframes']
+            del st.session_state['loaded_build_names']
+            st.rerun()
+    else:
+        for i in range(num_builds):
+            st.sidebar.markdown(f"### Build {i+1}")
+            build_name = st.sidebar.text_input(f"Build {i+1} name:", value=f"Build {i+1}", key=f"name_{i}")
+            uploaded_file = st.sidebar.file_uploader(
+                f"Upload discharge data for {build_name}",
+                type=['csv', 'xlsx', 'xls'],
+                key=f"file_{i}"
+            )
+            
+            if uploaded_file:
+                uploaded_files.append(uploaded_file)
+                build_names.append(build_name)
+                df = load_data(uploaded_file)
+                if df is not None:
+                    dataframes.append(df)
 
-if len(dataframes) == num_builds:
-    st.success(f"✅ All {num_builds} files loaded successfully!")
+else:
+    st.sidebar.markdown("### 📡 Real-Time Data Streaming")
+    st.sidebar.info("Monitor live battery discharge data")
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Discharge Curves", "📈 Multi-Parameter Analysis", "📋 Metrics Comparison", "📄 Data Preview"])
+    if 'streaming_data' not in st.session_state:
+        st.session_state['streaming_data'] = {}
+    
+    stream_build_name = st.sidebar.text_input("Build name:", value="Live Build 1", key="stream_build_name")
+    
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        stream_voltage = st.number_input("Voltage (V):", min_value=0.0, max_value=100.0, value=4.2, step=0.01, key="stream_voltage")
+    with col2:
+        stream_current = st.number_input("Current (A):", min_value=0.0, max_value=50.0, value=1.0, step=0.1, key="stream_current")
+    
+    if st.sidebar.button("➕ Add Data Point", key="add_stream_point"):
+        if stream_build_name not in st.session_state['streaming_data']:
+            st.session_state['streaming_data'][stream_build_name] = {
+                'Time': [],
+                'Voltage': [],
+                'Current': []
+            }
+        
+        current_time = len(st.session_state['streaming_data'][stream_build_name]['Time'])
+        st.session_state['streaming_data'][stream_build_name]['Time'].append(current_time)
+        st.session_state['streaming_data'][stream_build_name]['Voltage'].append(stream_voltage)
+        st.session_state['streaming_data'][stream_build_name]['Current'].append(stream_current)
+        st.rerun()
+    
+    if st.sidebar.button("🗑️ Clear Stream Data", key="clear_stream"):
+        st.session_state['streaming_data'] = {}
+        st.rerun()
+    
+    if st.session_state['streaming_data']:
+        for name, data in st.session_state['streaming_data'].items():
+            if len(data['Time']) > 0:
+                df = pd.DataFrame(data)
+                dataframes.append(df)
+                build_names.append(name)
+        
+        if dataframes:
+            st.sidebar.success(f"📊 {len(dataframes[0])} data points collected")
+    
+    num_builds = len(dataframes)
+
+if len(dataframes) == num_builds and num_builds > 0:
+    if data_mode == "Upload Files":
+        st.success(f"✅ All {num_builds} files loaded successfully!")
+    else:
+        st.success(f"✅ Streaming {num_builds} build(s) with live data!")
+    
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Discharge Curves", "📈 Multi-Parameter Analysis", "📋 Metrics Comparison", "🔬 Advanced Analytics", "📄 Data Preview"])
     
     with tab1:
         st.header("Voltage Discharge Curves")
@@ -270,6 +739,36 @@ if len(dataframes) == num_builds:
             metrics_df = pd.DataFrame(all_build_metrics)
             metrics_df = metrics_df.set_index('Build')
             
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            with col2:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                excel_data = export_to_excel(dataframes, build_names, metrics_df)
+                st.download_button(
+                    label="📥 Export Excel",
+                    data=excel_data,
+                    file_name=f"battery_analysis_{timestamp}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            with col3:
+                csv_data = export_to_csv(dataframes, build_names, metrics_df)
+                if csv_data:
+                    st.download_button(
+                        label="📥 Export CSV",
+                        data=csv_data,
+                        file_name=f"battery_metrics_{timestamp}.csv",
+                        mime="text/csv"
+                    )
+            with col4:
+                if DATABASE_URL and Session:
+                    if st.button("💾 Save to DB", key='save_comparison_btn'):
+                        comparison_name = st.text_input("Comparison name:", value=f"Comparison_{timestamp}", key='comparison_name_input')
+                        if comparison_name:
+                            success, msg = save_comparison_to_db(comparison_name, dataframes, build_names, metrics_df)
+                            if success:
+                                st.success(msg)
+                            else:
+                                st.error(msg)
+            
             st.dataframe(metrics_df.style.format("{:.4f}"), use_container_width=True)
             
             st.subheader("Statistical Summary")
@@ -289,7 +788,8 @@ if len(dataframes) == num_builds:
                     })
                 
                 stats_df = pd.DataFrame(stats_data)
-                st.dataframe(stats_df.style.format("{:.4f}"), use_container_width=True)
+                format_dict = {col: '{:.4f}' for col in stats_df.columns if col != 'Metric'}
+                st.dataframe(stats_df.style.format(format_dict), use_container_width=True)
                 
                 if len(metrics_df) == 2:
                     st.subheader("Build-to-Build Comparison")
@@ -319,6 +819,101 @@ if len(dataframes) == num_builds:
                     }), use_container_width=True)
     
     with tab4:
+        st.header("Advanced Analytics & Anomaly Detection")
+        
+        for idx, (df, name) in enumerate(zip(dataframes, build_names)):
+            time_col, voltage_col, current_col, capacity_col = detect_columns(df)
+            
+            st.subheader(f"📊 {name}")
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.markdown("#### Advanced Metrics")
+                analytics = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
+                
+                if analytics:
+                    analytics_df = pd.DataFrame([analytics]).T
+                    analytics_df.columns = ['Value']
+                    
+                    def format_value(val):
+                        if isinstance(val, (int, float, np.number)):
+                            return f"{val:.4f}"
+                        else:
+                            return str(val)
+                    
+                    st.dataframe(analytics_df.style.format(format_value), use_container_width=True)
+                else:
+                    st.info("Not enough data for advanced analytics")
+            
+            with col2:
+                st.markdown("#### Key Insights")
+                if analytics:
+                    if 'Average Degradation Rate (mV/min)' in analytics:
+                        st.metric("Degradation Rate", f"{analytics['Average Degradation Rate (mV/min)']:.2f} mV/min")
+                    if 'Energy Efficiency (%)' in analytics:
+                        st.metric("Energy Efficiency", f"{analytics['Energy Efficiency (%)']:.1f}%")
+                    if 'Estimated Cycle Life (hours)' in analytics:
+                        st.metric("Est. Cycle Life", f"{analytics['Estimated Cycle Life (hours)']:.1f} hrs")
+                    if 'Current Capacity Retention (%)' in analytics:
+                        st.metric("Capacity Retention", f"{analytics['Current Capacity Retention (%)']:.1f}%")
+            
+            st.markdown("#### Anomaly Detection")
+            anomalies, anomaly_indices = detect_anomalies(df, voltage_col, time_col)
+            
+            if anomalies:
+                st.warning(f"⚠️ Detected {len(anomalies)} potential anomalies")
+                
+                with st.expander(f"View {len(anomalies)} anomalies"):
+                    for anomaly in anomalies[:20]:
+                        st.text(f"• {anomaly}")
+                    if len(anomalies) > 20:
+                        st.text(f"... and {len(anomalies) - 20} more")
+                
+                if voltage_col and len(anomaly_indices) > 0:
+                    fig_anomaly = go.Figure()
+                    
+                    if time_col and time_col in df.columns:
+                        x_data = df[time_col]
+                        x_label = f"Time ({time_col})"
+                    else:
+                        x_data = df.index
+                        x_label = "Index"
+                    
+                    fig_anomaly.add_trace(go.Scatter(
+                        x=x_data,
+                        y=df[voltage_col],
+                        mode='lines',
+                        name='Voltage',
+                        line=dict(color='blue', width=2)
+                    ))
+                    
+                    anomaly_x = [x_data.iloc[i] if hasattr(x_data, 'iloc') else x_data[i] for i in anomaly_indices if i < len(x_data)]
+                    anomaly_y = [df[voltage_col].iloc[i] for i in anomaly_indices if i < len(df)]
+                    
+                    fig_anomaly.add_trace(go.Scatter(
+                        x=anomaly_x,
+                        y=anomaly_y,
+                        mode='markers',
+                        name='Anomalies',
+                        marker=dict(color='red', size=10, symbol='x')
+                    ))
+                    
+                    fig_anomaly.update_layout(
+                        title=f"{name} - Voltage with Anomalies Highlighted",
+                        xaxis_title=x_label,
+                        yaxis_title="Voltage (V)",
+                        height=400,
+                        template="plotly_white"
+                    )
+                    
+                    st.plotly_chart(fig_anomaly, use_container_width=True)
+            else:
+                st.success("✅ No significant anomalies detected")
+            
+            st.markdown("---")
+    
+    with tab5:
         st.header("Data Preview")
         
         for df, name in zip(dataframes, build_names):
@@ -337,29 +932,47 @@ if len(dataframes) == num_builds:
                 st.markdown(f"**Data Shape:** {df.shape[0]} rows × {df.shape[1]} columns")
 
 else:
-    st.info(f"👆 Please upload {num_builds} discharge data files using the sidebar to begin analysis.")
+    if data_mode == "Upload Files":
+        st.info(f"👆 Please upload discharge data files using the sidebar to begin analysis.")
+    else:
+        st.info(f"👆 Use the sidebar to add real-time data points for live monitoring.")
     
     with st.expander("ℹ️ How to use this application"):
         st.markdown("""
+        ### Two Input Modes
+        
+        **1. Upload Files Mode**
+        - Upload 2-3 CSV or Excel files with battery discharge data
+        - Files are automatically analyzed and compared
+        - Save comparisons to database for later review
+        
+        **2. Real-Time Streaming Mode**
+        - Manually enter voltage and current readings as they occur
+        - Build live discharge curves as data accumulates
+        - Perfect for monitoring ongoing battery tests
+        
         ### Data Format Requirements
         
         Your discharge data files should contain the following columns (column names will be auto-detected):
         
-        - **Time**: Time stamps for each measurement (e.g., "Time", "time", "Time(s)")
+        - **Time**: Time stamps for each measurement
+          - Numeric values: assumed to be in **minutes**
+          - Datetime strings: automatically converted (e.g., "2024-01-01 10:00:00")
+          - Timedelta strings: automatically converted (e.g., "00:15:30")
         - **Voltage**: Battery voltage measurements (e.g., "Voltage", "Voltage(V)", "volt")
         - **Current**: Current measurements - optional (e.g., "Current", "Current(A)", "Amp")
         - **Capacity**: Capacity measurements - optional (e.g., "Capacity", "Cap", "Capacity(Ah)")
         
-        ### Steps to Analyze
+        **Note**: For numeric time columns, ensure values are in **minutes** for accurate calculations.
         
-        1. Select the number of builds you want to compare (2 or 3)
-        2. Give each build a descriptive name
-        3. Upload the corresponding CSV or Excel file for each build
-        4. Explore the different tabs:
-           - **Discharge Curves**: Compare voltage curves side-by-side
-           - **Multi-Parameter Analysis**: View voltage, current, and power over time
-           - **Metrics Comparison**: See calculated metrics and statistics
-           - **Data Preview**: Inspect your raw data
+        ### Features
+        
+        1. **Discharge Curves**: Compare voltage curves side-by-side
+        2. **Multi-Parameter Analysis**: View voltage, current, and power over time
+        3. **Metrics Comparison**: See calculated metrics and statistics with export options
+        4. **Advanced Analytics**: Degradation rates, efficiency metrics, and cycle life estimation
+        5. **Anomaly Detection**: Automatic detection of unusual discharge patterns
+        6. **Data Preview**: Inspect your raw data
         
         ### Supported File Formats
         
