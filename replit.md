@@ -78,6 +78,24 @@ SavedComparison:
 - **Rationale**: Covers the two most common formats for exporting battery test data from laboratory equipment
 - **Processing**: In-memory file handling using io module for uploaded files
 
+**File Structure with Metadata**:
+The application supports extracting metadata from the top rows of data files:
+- Row 1: `Battery Code` | `<battery_identifier>` (e.g., "ALK-AA-001")
+- Row 2: `Temperature` | `<temperature_value>` (e.g., "25°C")
+- Row 3: `Build ID` | `<build_identifier>` (e.g., "Build_A")
+- Row 4+: Data table with column headers and measurements
+
+**Metadata Usage**:
+- Battery Code: Identifies the specific battery being tested
+- Temperature: Test temperature (extracted and used for temperature comparison analysis)
+- Build ID: Build identifier for comparing different builds at the same temperature
+- If metadata is not present in file, the application falls back to parsing build names
+
+**Comparison Scenarios Supported**:
+1. Different builds at the same temperature (compare battery quality/performance)
+2. Same battery at different temperatures (temperature performance analysis)
+3. Mixed comparisons (multiple batteries and temperatures)
+
 ## External Dependencies
 
 ### Core Framework

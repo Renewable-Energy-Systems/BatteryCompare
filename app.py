@@ -40,20 +40,80 @@ st.set_page_config(page_title="Battery Discharge Analysis", layout="wide")
 st.title("🔋 Battery Discharge Data Analysis")
 st.markdown("Compare discharge curves and performance metrics across different builds")
 
-def load_data(uploaded_file):
-    """Load data from uploaded CSV or Excel file"""
+def extract_metadata_from_file(uploaded_file):
+    """
+    Extract metadata from the top rows of the file.
+    Expected format:
+    - Row 1: Battery Code: <code>
+    - Row 2: Temperature: <temp>
+    - Row 3: Build ID: <id>
+    - Row 4+: Data table (headers + data)
+    
+    Returns: (metadata_dict, data_start_row)
+    """
+    metadata = {
+        'battery_code': None,
+        'temperature': None,
+        'build_id': None
+    }
+    
     try:
         if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
+            temp_df = pd.read_csv(uploaded_file, nrows=10, header=None)
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(uploaded_file)
+            temp_df = pd.read_excel(uploaded_file, nrows=10, header=None)
+        else:
+            return metadata, 0
+        
+        uploaded_file.seek(0)
+        
+        data_start_row = 0
+        found_header = False
+        
+        for idx, row in temp_df.iterrows():
+            row_str = str(row[0]).lower() if pd.notna(row[0]) else ""
+            
+            # Check if this is a header row (contains column names like time, voltage, etc.)
+            if 'time' in row_str or 'voltage' in row_str or 'current' in row_str:
+                # This is the header row - data starts here
+                data_start_row = idx
+                found_header = True
+                break
+            
+            # Check for metadata rows
+            if 'battery' in row_str and 'code' in row_str:
+                metadata['battery_code'] = str(row[1]) if len(row) > 1 and pd.notna(row[1]) else None
+            elif 'temperature' in row_str or 'temp' in row_str:
+                metadata['temperature'] = str(row[1]) if len(row) > 1 and pd.notna(row[1]) else None
+            elif 'build' in row_str and 'id' in row_str:
+                metadata['build_id'] = str(row[1]) if len(row) > 1 and pd.notna(row[1]) else None
+        
+        # If we found a header, skip to it; otherwise skip all checked rows
+        if not found_header and data_start_row == 0:
+            # No metadata or header found, start from beginning
+            data_start_row = 0
+        
+        return metadata, data_start_row
+    except:
+        return metadata, 0
+
+def load_data(uploaded_file):
+    """Load data from uploaded CSV or Excel file with metadata extraction"""
+    try:
+        metadata, skip_rows = extract_metadata_from_file(uploaded_file)
+        
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file, skiprows=skip_rows)
+        elif uploaded_file.name.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(uploaded_file, skiprows=skip_rows)
         else:
             st.error("Unsupported file format. Please upload CSV or Excel files.")
-            return None
-        return df
+            return None, None
+        
+        return df, metadata
     except Exception as e:
         st.error(f"Error loading file: {str(e)}")
-        return None
+        return None, None
 
 def detect_columns(df):
     """Auto-detect relevant columns in the dataset"""
@@ -573,6 +633,7 @@ if DATABASE_URL and Session:
 uploaded_files = []
 build_names = []
 dataframes = []
+metadata_list = []
 
 if data_mode == "Upload Files":
     st.sidebar.markdown("Upload 2-3 battery discharge data files for comparison")
@@ -582,6 +643,7 @@ if data_mode == "Upload Files":
     if 'loaded_dataframes' in st.session_state and 'loaded_build_names' in st.session_state:
         dataframes = st.session_state['loaded_dataframes']
         build_names = st.session_state['loaded_build_names']
+        metadata_list = st.session_state.get('loaded_metadata', [{}] * len(dataframes))
         num_builds = len(dataframes)
         
         st.sidebar.success(f"✅ Loaded {num_builds} builds from database")
@@ -589,6 +651,8 @@ if data_mode == "Upload Files":
         if st.sidebar.button("Clear Loaded Data"):
             del st.session_state['loaded_dataframes']
             del st.session_state['loaded_build_names']
+            if 'loaded_metadata' in st.session_state:
+                del st.session_state['loaded_metadata']
             st.rerun()
     else:
         for i in range(num_builds):
@@ -602,10 +666,19 @@ if data_mode == "Upload Files":
             
             if uploaded_file:
                 uploaded_files.append(uploaded_file)
-                build_names.append(build_name)
-                df = load_data(uploaded_file)
+                df, metadata = load_data(uploaded_file)
                 if df is not None:
+                    if metadata and any(metadata.values()):
+                        if metadata.get('build_id'):
+                            build_name = f"{metadata['build_id']}"
+                        if metadata.get('battery_code'):
+                            build_name += f" ({metadata['battery_code']})"
+                        if metadata.get('temperature'):
+                            build_name += f" @ {metadata['temperature']}"
+                    
+                    build_names.append(build_name)
                     dataframes.append(df)
+                    metadata_list.append(metadata if metadata else {})
 
 else:
     st.sidebar.markdown("### 📡 Real-Time Data Streaming")
@@ -646,6 +719,7 @@ else:
                 df = pd.DataFrame(data)
                 dataframes.append(df)
                 build_names.append(name)
+                metadata_list.append({})
         
         if dataframes:
             st.sidebar.success(f"📊 {len(dataframes[0])} data points collected")
@@ -657,6 +731,22 @@ if len(dataframes) == num_builds and num_builds > 0:
         st.success(f"✅ All {num_builds} files loaded successfully!")
     else:
         st.success(f"✅ Streaming {num_builds} build(s) with live data!")
+    
+    if metadata_list and any(any(m.values()) for m in metadata_list):
+        st.subheader("📋 Build Information")
+        build_info_data = []
+        for idx, (name, metadata) in enumerate(zip(build_names, metadata_list)):
+            info = {
+                'Build Name': name,
+                'Battery Code': metadata.get('battery_code', 'N/A') if metadata else 'N/A',
+                'Temperature': metadata.get('temperature', 'N/A') if metadata else 'N/A',
+                'Build ID': metadata.get('build_id', 'N/A') if metadata else 'N/A'
+            }
+            build_info_data.append(info)
+        
+        build_info_df = pd.DataFrame(build_info_data)
+        st.dataframe(build_info_df, use_container_width=True, hide_index=True)
+        st.markdown("---")
     
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Discharge Curves", "📈 Multi-Parameter Analysis", "📋 Metrics Comparison", "🔬 Advanced Analytics", "📄 Data Preview", "🌡️ Temperature Comparison"])
     
@@ -769,9 +859,9 @@ if len(dataframes) == num_builds and num_builds > 0:
                                 row=i+1, col=1
                             )
                             
-                            fig.update_yaxis(title_text=param_name, row=i+1, col=1)
+                            fig.update_yaxes(title_text=param_name, row=i+1, col=1)
                         
-                        fig.update_xaxis(title_text=f"Time ({time_col})", row=len(params), col=1)
+                        fig.update_xaxes(title_text=f"Time ({time_col})", row=len(params), col=1)
                         fig.update_layout(
                             height=400 * len(params),
                             showlegend=False,
@@ -1018,14 +1108,31 @@ if len(dataframes) == num_builds and num_builds > 0:
         st.header("Temperature-Based Performance Comparison")
         
         temp_data = []
-        for df, name in zip(dataframes, build_names):
-            temp = extract_temperature_from_name(name)
+        for idx, (df, name) in enumerate(zip(dataframes, build_names)):
+            metadata = metadata_list[idx] if idx < len(metadata_list) else {}
+            
+            temp = None
+            if metadata and metadata.get('temperature'):
+                temp_str = str(metadata['temperature'])
+                import re
+                temp_match = re.search(r'(-?\d+(?:\.\d+)?)', temp_str)
+                if temp_match:
+                    temp = float(temp_match.group(1))
+            
+            if temp is None:
+                temp = extract_temperature_from_name(name)
+            
             time_col, voltage_col, current_col, capacity_col = detect_columns(df)
             metrics = calculate_metrics(df, time_col, voltage_col, current_col)
             advanced = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
             
+            battery_code = metadata.get('battery_code', '') if metadata else ''
+            build_id = metadata.get('build_id', '') if metadata else ''
+            
             temp_data.append({
                 'Build Name': name,
+                'Battery Code': battery_code if battery_code else 'N/A',
+                'Build ID': build_id if build_id else 'N/A',
                 'Temperature (°C)': temp if temp is not None else 'Not specified',
                 'Total Time (min)': metrics.get('Total Time (min)', 0),
                 'Voltage Range (V)': metrics.get('Voltage Range (V)', 0),
@@ -1040,8 +1147,8 @@ if len(dataframes) == num_builds and num_builds > 0:
             has_temps = any(isinstance(t['Temperature (°C)'], (int, float)) for t in temp_data)
             
             if has_temps:
-                st.success("🌡️ Temperature information detected in build names!")
-                st.info("**Tip:** Include temperature in your build names (e.g., '25C', '-20C', '0C') for automatic temperature detection.")
+                st.success("🌡️ Temperature information detected!")
+                st.info("**Tip:** You can include temperature in file metadata or build names (e.g., '25C', '-20C', '0C') for automatic temperature detection.")
                 
                 numeric_temp_df = temp_df[temp_df['Temperature (°C)'].apply(lambda x: isinstance(x, (int, float)))].copy()
                 numeric_temp_df = numeric_temp_df.sort_values('Temperature (°C)')
