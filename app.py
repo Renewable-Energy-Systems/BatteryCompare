@@ -810,9 +810,9 @@ if len(dataframes) == num_builds and num_builds > 0:
         
         st.plotly_chart(fig, use_container_width=True)
         
-        col1, col2, col3 = st.columns(num_builds)
+        cols = st.columns(num_builds)
         for idx, metrics in enumerate(all_metrics):
-            with [col1, col2, col3][idx]:
+            with cols[idx]:
                 st.markdown(f"### {metrics['Build']}")
                 if 'Max Voltage (V)' in metrics:
                     st.metric("Max Voltage", f"{metrics['Max Voltage (V)']:.3f} V")
