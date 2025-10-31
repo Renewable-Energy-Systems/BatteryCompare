@@ -77,6 +77,54 @@ def detect_columns(df):
     
     return time_col, voltage_col, current_col, capacity_col
 
+def detect_time_unit_and_convert(time_series):
+    """
+    Detect time unit (milliseconds, seconds, or minutes) and convert to minutes.
+    Returns converted time series in minutes.
+    """
+    try:
+        numeric_series = pd.to_numeric(time_series, errors='coerce')
+        if numeric_series.isna().all():
+            return time_series
+        
+        time_range = numeric_series.max() - numeric_series.min()
+        num_points = len(numeric_series)
+        
+        if time_range == 0:
+            return numeric_series
+        
+        avg_interval = time_range / max(num_points - 1, 1)
+        
+        if avg_interval < 1:
+            conversion_factor = 1.0 / 60000.0
+            unit = "milliseconds"
+        elif time_range > 1000 or (time_range > 100 and avg_interval < 5):
+            conversion_factor = 1.0 / 60.0
+            unit = "seconds"
+        else:
+            conversion_factor = 1.0
+            unit = "minutes"
+        
+        converted = numeric_series * conversion_factor
+        
+        if unit != "minutes":
+            st.info(f"⏱️ Time column auto-detected as **{unit}** and converted to minutes for calculations.")
+        
+        return converted
+    except:
+        return time_series
+
+def extract_temperature_from_name(name):
+    """
+    Extract temperature from build name (e.g., '25C', '-20C', '0C')
+    Returns temperature as a float or None if not found
+    """
+    import re
+    match = re.search(r'(-?\d+)\s*°?C', name, re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    return None
+
 def calculate_metrics(df, time_col, voltage_col, current_col=None):
     """Calculate key battery metrics"""
     metrics = {}
@@ -97,6 +145,7 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None):
         if not pd.api.types.is_numeric_dtype(time_series) and not pd.api.types.is_datetime64_any_dtype(time_series) and not pd.api.types.is_timedelta64_dtype(time_series):
             try:
                 time_series = pd.to_numeric(time_series, errors='raise')
+                time_series = detect_time_unit_and_convert(time_series)
             except:
                 try:
                     time_series = pd.to_timedelta(time_series)
@@ -105,6 +154,8 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None):
                         time_series = pd.to_datetime(time_series)
                     except:
                         return metrics
+        elif pd.api.types.is_numeric_dtype(time_series):
+            time_series = detect_time_unit_and_convert(time_series)
         
         time_max = time_series.max()
         time_min = time_series.min()
@@ -182,10 +233,12 @@ def calculate_advanced_analytics(df, time_col, voltage_col, current_col=None):
             elif pd.api.types.is_timedelta64_dtype(df[time_col]):
                 time_series = df[time_col].dt.total_seconds().values / 60
             elif pd.api.types.is_numeric_dtype(df[time_col]):
-                time_series = time_series_raw.astype(float)
+                time_series_converted = detect_time_unit_and_convert(df[time_col])
+                time_series = time_series_converted.values
             else:
                 try:
-                    time_series = pd.to_numeric(df[time_col], errors='raise').values
+                    time_series_converted = detect_time_unit_and_convert(pd.to_numeric(df[time_col], errors='raise'))
+                    time_series = time_series_converted.values
                 except:
                     try:
                         time_parsed = pd.to_timedelta(df[time_col])
@@ -242,27 +295,18 @@ def calculate_advanced_analytics(df, time_col, voltage_col, current_col=None):
         voltage_range = initial_voltage - final_voltage
         if total_time > 0:
             if voltage_range > 0:
-                avg_degradation_rate_per_min = voltage_range / total_time
-                
                 eol_voltage = initial_voltage * 0.7
                 
                 if final_voltage <= eol_voltage:
-                    estimated_eol_time = total_time
-                    analytics['Estimated Cycle Life (min)'] = estimated_eol_time
-                    analytics['Estimated Cycle Life (hours)'] = estimated_eol_time / 60
-                    analytics['Battery Status'] = 'End of Life Reached'
-                elif avg_degradation_rate_per_min > 0:
-                    remaining_voltage_drop = initial_voltage - eol_voltage
-                    estimated_eol_time = remaining_voltage_drop / avg_degradation_rate_per_min
-                    analytics['Estimated Cycle Life (min)'] = estimated_eol_time
-                    analytics['Estimated Cycle Life (hours)'] = estimated_eol_time / 60
-                    analytics['Battery Status'] = 'Active'
+                    analytics['Battery Status'] = 'Discharged (Below 70% Initial Voltage)'
                 else:
-                    analytics['Battery Status'] = 'Stable (No Degradation Detected)'
+                    analytics['Battery Status'] = 'Active Discharge'
+            else:
+                analytics['Battery Status'] = 'Stable (No Degradation Detected)'
             
             if initial_voltage > 0:
-                capacity_retention = (final_voltage / initial_voltage) * 100
-                analytics['Current Capacity Retention (%)'] = capacity_retention
+                voltage_retention = (final_voltage / initial_voltage) * 100
+                analytics['Voltage Retention (%)'] = voltage_retention
         
         if current_col and current_col in df.columns:
             current_series = df[current_col].values
@@ -581,7 +625,7 @@ if len(dataframes) == num_builds and num_builds > 0:
     else:
         st.success(f"✅ Streaming {num_builds} build(s) with live data!")
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Discharge Curves", "📈 Multi-Parameter Analysis", "📋 Metrics Comparison", "🔬 Advanced Analytics", "📄 Data Preview"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Discharge Curves", "📈 Multi-Parameter Analysis", "📋 Metrics Comparison", "🔬 Advanced Analytics", "📄 Data Preview", "🌡️ Temperature Comparison"])
     
     with tab1:
         st.header("Voltage Discharge Curves")
@@ -930,6 +974,128 @@ if len(dataframes) == num_builds and num_builds > 0:
                 st.dataframe(df.head(20), use_container_width=True)
                 
                 st.markdown(f"**Data Shape:** {df.shape[0]} rows × {df.shape[1]} columns")
+    
+    with tab6:
+        st.header("Temperature-Based Performance Comparison")
+        
+        temp_data = []
+        for df, name in zip(dataframes, build_names):
+            temp = extract_temperature_from_name(name)
+            time_col, voltage_col, current_col, capacity_col = detect_columns(df)
+            metrics = calculate_metrics(df, time_col, voltage_col, current_col)
+            advanced = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
+            
+            temp_data.append({
+                'Build Name': name,
+                'Temperature (°C)': temp if temp is not None else 'Not specified',
+                'Total Time (min)': metrics.get('Total Time (min)', 0),
+                'Voltage Range (V)': metrics.get('Voltage Range (V)', 0),
+                'Avg Degradation (mV/min)': advanced.get('Average Degradation Rate (mV/min)', 0),
+                'Voltage Retention (%)': advanced.get('Voltage Retention (%)', 0),
+                'Total Energy (Wh)': advanced.get('Total Energy Discharged (Wh)', metrics.get('Total Energy (Wh)', 0)),
+            })
+        
+        if temp_data:
+            temp_df = pd.DataFrame(temp_data)
+            
+            has_temps = any(isinstance(t['Temperature (°C)'], (int, float)) for t in temp_data)
+            
+            if has_temps:
+                st.success("🌡️ Temperature information detected in build names!")
+                st.info("**Tip:** Include temperature in your build names (e.g., '25C', '-20C', '0C') for automatic temperature detection.")
+                
+                numeric_temp_df = temp_df[temp_df['Temperature (°C)'].apply(lambda x: isinstance(x, (int, float)))].copy()
+                numeric_temp_df = numeric_temp_df.sort_values('Temperature (°C)')
+                
+                st.subheader("Performance vs Temperature")
+                st.dataframe(numeric_temp_df, use_container_width=True)
+                
+                if len(numeric_temp_df) >= 2:
+                    st.subheader("Temperature Impact Visualization")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        fig1 = go.Figure()
+                        fig1.add_trace(go.Scatter(
+                            x=numeric_temp_df['Temperature (°C)'],
+                            y=numeric_temp_df['Total Time (min)'],
+                            mode='lines+markers',
+                            name='Discharge Time',
+                            marker=dict(size=10)
+                        ))
+                        fig1.update_layout(
+                            title='Discharge Time vs Temperature',
+                            xaxis_title='Temperature (°C)',
+                            yaxis_title='Total Discharge Time (min)',
+                            height=400
+                        )
+                        st.plotly_chart(fig1, use_container_width=True)
+                    
+                    with col2:
+                        fig2 = go.Figure()
+                        fig2.add_trace(go.Scatter(
+                            x=numeric_temp_df['Temperature (°C)'],
+                            y=numeric_temp_df['Total Energy (Wh)'],
+                            mode='lines+markers',
+                            name='Energy',
+                            marker=dict(size=10, color='orange')
+                        ))
+                        fig2.update_layout(
+                            title='Energy Output vs Temperature',
+                            xaxis_title='Temperature (°C)',
+                            yaxis_title='Total Energy (Wh)',
+                            height=400
+                        )
+                        st.plotly_chart(fig2, use_container_width=True)
+                    
+                    st.subheader("Voltage Retention vs Temperature")
+                    fig3 = go.Figure()
+                    fig3.add_trace(go.Scatter(
+                        x=numeric_temp_df['Temperature (°C)'],
+                        y=numeric_temp_df['Voltage Retention (%)'],
+                        mode='lines+markers',
+                        name='Voltage Retention',
+                        marker=dict(size=10, color='green')
+                    ))
+                    fig3.update_layout(
+                        title='Voltage Retention vs Temperature',
+                        xaxis_title='Temperature (°C)',
+                        yaxis_title='Voltage Retention (%)',
+                        height=400
+                    )
+                    st.plotly_chart(fig3, use_container_width=True)
+                    
+                    st.subheader("Temperature Performance Summary")
+                    best_temp_idx = numeric_temp_df['Total Energy (Wh)'].idxmax()
+                    worst_temp_idx = numeric_temp_df['Total Energy (Wh)'].idxmin()
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric(
+                            "Best Performance Temperature",
+                            f"{numeric_temp_df.loc[best_temp_idx, 'Temperature (°C)']}°C",
+                            f"{numeric_temp_df.loc[best_temp_idx, 'Total Energy (Wh)']:.2f} Wh"
+                        )
+                    with col2:
+                        st.metric(
+                            "Worst Performance Temperature",
+                            f"{numeric_temp_df.loc[worst_temp_idx, 'Temperature (°C)']}°C",
+                            f"{numeric_temp_df.loc[worst_temp_idx, 'Total Energy (Wh)']:.2f} Wh"
+                        )
+                    with col3:
+                        energy_range = numeric_temp_df['Total Energy (Wh)'].max() - numeric_temp_df['Total Energy (Wh)'].min()
+                        avg_energy = numeric_temp_df['Total Energy (Wh)'].mean()
+                        pct_variation = (energy_range / avg_energy * 100) if avg_energy > 0 else 0
+                        st.metric(
+                            "Energy Variation",
+                            f"{pct_variation:.1f}%",
+                            f"Range: {energy_range:.2f} Wh"
+                        )
+            else:
+                st.warning("⚠️ No temperature information detected in build names.")
+                st.info("**Tip:** Include temperature in your build names (e.g., '25C', '-20C', '0C') to enable temperature-based comparison.")
+                st.dataframe(temp_df, use_container_width=True)
 
 else:
     if data_mode == "Upload Files":
