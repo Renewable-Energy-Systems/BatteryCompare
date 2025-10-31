@@ -43,11 +43,9 @@ st.markdown("Compare discharge curves and performance metrics across different b
 def extract_metadata_from_file(uploaded_file):
     """
     Extract metadata from the top rows of the file.
-    Expected format:
-    - Row 1: Battery Code: <code>
-    - Row 2: Temperature: <temp>
-    - Row 3: Build ID: <id>
-    - Row 4+: Data table (headers + data)
+    Supports two formats:
+    1. Metadata in columns 0-1 (original format)
+    2. Metadata in columns 4-5 (new format with empty leading columns)
     
     Returns: (metadata_dict, data_start_row)
     """
@@ -71,26 +69,31 @@ def extract_metadata_from_file(uploaded_file):
         found_header = False
         
         for idx, row in temp_df.iterrows():
-            row_str = str(row[0]).lower() if pd.notna(row[0]) else ""
+            # Check all columns for metadata and headers
+            row_strings = [str(val).lower() if pd.notna(val) else "" for val in row]
             
-            # Check if this is a header row (contains column names like time, voltage, etc.)
-            if 'time' in row_str or 'voltage' in row_str or 'current' in row_str:
-                # This is the header row - data starts here
+            # Check if any column contains header keywords
+            header_found_in_row = any('time' in s or 'voltage' in s or 'current' in s for s in row_strings)
+            
+            if header_found_in_row:
+                # This is the header row
                 data_start_row = idx
                 found_header = True
                 break
             
-            # Check for metadata rows
-            if 'battery' in row_str and 'code' in row_str:
-                metadata['battery_code'] = str(row[1]) if len(row) > 1 and pd.notna(row[1]) else None
-            elif 'temperature' in row_str or 'temp' in row_str:
-                metadata['temperature'] = str(row[1]) if len(row) > 1 and pd.notna(row[1]) else None
-            elif 'build' in row_str and 'id' in row_str:
-                metadata['build_id'] = str(row[1]) if len(row) > 1 and pd.notna(row[1]) else None
+            # Check for metadata in any column pair
+            for col_idx in range(len(row) - 1):
+                label = str(row[col_idx]).lower() if pd.notna(row[col_idx]) else ""
+                value = row[col_idx + 1]
+                
+                if 'battery' in label and 'code' in label and pd.notna(value):
+                    metadata['battery_code'] = str(value)
+                elif ('temperature' in label or 'temp' in label) and pd.notna(value):
+                    metadata['temperature'] = str(value)
+                elif 'build' in label and ('number' in label or 'id' in label) and pd.notna(value):
+                    metadata['build_id'] = str(value)
         
-        # If we found a header, skip to it; otherwise skip all checked rows
         if not found_header and data_start_row == 0:
-            # No metadata or header found, start from beginning
             data_start_row = 0
         
         return metadata, data_start_row
@@ -110,6 +113,15 @@ def load_data(uploaded_file):
             st.error("Unsupported file format. Please upload CSV or Excel files.")
             return None, None
         
+        # Drop columns that are completely empty (all NaN)
+        df = df.dropna(axis=1, how='all')
+        
+        # Drop rows that are completely empty
+        df = df.dropna(axis=0, how='all')
+        
+        # Reset index after cleaning
+        df = df.reset_index(drop=True)
+        
         return df, metadata
     except Exception as e:
         st.error(f"Error loading file: {str(e)}")
@@ -117,22 +129,28 @@ def load_data(uploaded_file):
 
 def detect_columns(df):
     """Auto-detect relevant columns in the dataset"""
-    columns = df.columns.str.lower()
-    
     time_col = None
     voltage_col = None
     current_col = None
     capacity_col = None
     
     for col in df.columns:
-        col_lower = col.lower()
-        if 'time' in col_lower:
+        col_lower = str(col).lower()
+        
+        # Time column
+        if 'time' in col_lower and time_col is None:
             time_col = col
-        elif 'voltage' in col_lower or 'volt' in col_lower:
+        
+        # Voltage column
+        elif ('voltage' in col_lower or 'volt' in col_lower) and voltage_col is None:
             voltage_col = col
-        elif 'current' in col_lower or 'amp' in col_lower:
+        
+        # Current column (handle both "discharge" and "dicharge" typo)
+        elif ('current' in col_lower or 'amp' in col_lower or 'dicharge' in col_lower or 'discharge' in col_lower) and current_col is None:
             current_col = col
-        elif 'capacity' in col_lower or 'cap' in col_lower:
+        
+        # Capacity column
+        elif ('capacity' in col_lower or 'cap' in col_lower) and capacity_col is None:
             capacity_col = col
     
     return time_col, voltage_col, current_col, capacity_col
