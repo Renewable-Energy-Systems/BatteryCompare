@@ -2,7 +2,16 @@
 
 ## Overview
 
-This is a Streamlit-based web application for analyzing and comparing battery discharge data across different builds. The application allows users to upload battery discharge datasets (CSV/Excel), visualize discharge curves, compare performance metrics, and save comparisons for future reference. It provides interactive visualizations using Plotly and statistical analysis capabilities using SciPy.
+This is a Streamlit-based web application for analyzing and comparing **primary (non-rechargeable) battery** discharge data across different temperature conditions. The application is optimized for high-frequency discharge data (e.g., 10ms sampling intervals) from battery testing equipment. Users can upload discharge datasets (CSV/Excel), visualize discharge curves, compare temperature-dependent performance metrics, and save comparisons for future reference. It provides interactive visualizations using Plotly and statistical analysis capabilities using SciPy.
+
+## Current Use Case
+
+**Primary Battery Temperature Testing**:
+- Battery type: Primary (non-rechargeable) batteries
+- Test conditions: Multiple temperatures (e.g., 25°C, 0°C, -20°C)
+- Data characteristics: High-frequency sampling (10ms intervals, 300k+ data points per test)
+- Duration: Typical tests run for ~3000 seconds (50 minutes)
+- Metrics focus: Voltage retention, energy output, degradation rates across temperatures
 
 ## User Preferences
 

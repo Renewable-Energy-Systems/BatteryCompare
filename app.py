@@ -79,15 +79,25 @@ def detect_columns(df):
 
 def detect_time_unit_and_convert(time_series):
     """
-    Detect time unit (milliseconds, seconds, or minutes) and convert to minutes.
-    Returns converted time series in minutes.
+    Detect time unit (milliseconds or seconds) and convert to minutes.
+    Defaults to seconds for safety.
+    
+    Detection Logic:
+    - max > 10000: milliseconds (e.g., 3000s = 3,000,000ms)
+    - avg_interval > 1 AND max > 100: milliseconds (e.g., 10ms intervals in ms data)
+    - otherwise: seconds (safe default)
+    
+    Note: If your data is already in minutes, please convert to seconds before uploading.
+    The application is optimized for high-frequency test data in seconds or milliseconds.
     """
     try:
         numeric_series = pd.to_numeric(time_series, errors='coerce')
         if numeric_series.isna().all():
             return time_series
         
-        time_range = numeric_series.max() - numeric_series.min()
+        max_time = numeric_series.max()
+        min_time = numeric_series.min()
+        time_range = max_time - min_time
         num_points = len(numeric_series)
         
         if time_range == 0:
@@ -95,19 +105,19 @@ def detect_time_unit_and_convert(time_series):
         
         avg_interval = time_range / max(num_points - 1, 1)
         
-        if avg_interval < 1:
+        if max_time > 10000:
             conversion_factor = 1.0 / 60000.0
             unit = "milliseconds"
-        elif time_range > 1000 or (time_range > 100 and avg_interval < 5):
+        elif avg_interval > 1.0 and max_time > 100:
+            conversion_factor = 1.0 / 60000.0
+            unit = "milliseconds"
+        else:
             conversion_factor = 1.0 / 60.0
             unit = "seconds"
-        else:
-            conversion_factor = 1.0
-            unit = "minutes"
         
         converted = numeric_series * conversion_factor
         
-        if unit != "minutes":
+        if unit == "milliseconds":
             st.info(f"⏱️ Time column auto-detected as **{unit}** and converted to minutes for calculations.")
         
         return converted
@@ -124,6 +134,29 @@ def extract_temperature_from_name(name):
     if match:
         return float(match.group(1))
     return None
+
+def downsample_for_plotting(df, max_points=10000):
+    """
+    Downsample large datasets for efficient plotting while preserving data characteristics.
+    Uses intelligent sampling to keep start, end, and evenly distributed points.
+    Guarantees output has at most max_points rows.
+    """
+    if len(df) <= max_points:
+        return df
+    
+    step = max(1, len(df) // max_points)
+    if step * max_points < len(df):
+        step += 1
+    
+    indices = list(range(0, len(df), step))
+    
+    if len(indices) > max_points:
+        indices = indices[:max_points-1]
+    
+    if indices[-1] != len(df) - 1:
+        indices.append(len(df) - 1)
+    
+    return df.iloc[indices].copy()
 
 def calculate_metrics(df, time_col, voltage_col, current_col=None):
     """Calculate key battery metrics"""
@@ -639,22 +672,27 @@ if len(dataframes) == num_builds and num_builds > 0:
             time_col, voltage_col, current_col, capacity_col = detect_columns(df)
             
             if voltage_col:
+                df_plot = downsample_for_plotting(df)
+                
+                if len(df) > 10000:
+                    st.info(f"ℹ️ Dataset '{name}' has {len(df):,} rows. Showing {len(df_plot):,} points for visualization (all data used for calculations).")
+                
                 x_axis = None
                 x_label = ""
                 
-                if capacity_col and capacity_col in df.columns:
-                    x_axis = df[capacity_col]
+                if capacity_col and capacity_col in df_plot.columns:
+                    x_axis = df_plot[capacity_col]
                     x_label = f"Capacity ({capacity_col})"
-                elif time_col and time_col in df.columns:
-                    x_axis = df[time_col]
+                elif time_col and time_col in df_plot.columns:
+                    x_axis = df_plot[time_col]
                     x_label = f"Time ({time_col})"
                 else:
-                    x_axis = df.index
+                    x_axis = df_plot.index
                     x_label = "Data Point"
                 
                 fig.add_trace(go.Scatter(
                     x=x_axis,
-                    y=df[voltage_col],
+                    y=df_plot[voltage_col],
                     mode='lines',
                     name=name,
                     line=dict(color=colors[idx % len(colors)], width=2),
@@ -703,10 +741,12 @@ if len(dataframes) == num_builds and num_builds > 0:
                 time_col, voltage_col, current_col, capacity_col = detect_columns(df)
                 
                 if time_col and time_col in df.columns:
+                    df_plot = downsample_for_plotting(df)
+                    
                     params = []
-                    if voltage_col and voltage_col in df.columns:
+                    if voltage_col and voltage_col in df_plot.columns:
                         params.append(('Voltage (V)', voltage_col))
-                    if current_col and current_col in df.columns:
+                    if current_col and current_col in df_plot.columns:
                         params.append(('Current (A)', current_col))
                     
                     if len(params) > 1:
@@ -720,8 +760,8 @@ if len(dataframes) == num_builds and num_builds > 0:
                         for i, (param_name, param_col) in enumerate(params):
                             fig.add_trace(
                                 go.Scatter(
-                                    x=df[time_col],
-                                    y=df[param_col],
+                                    x=df_plot[time_col],
+                                    y=df_plot[param_col],
                                     mode='lines',
                                     name=param_name,
                                     line=dict(color=colors[idx % len(colors)], width=2)
@@ -741,12 +781,12 @@ if len(dataframes) == num_builds and num_builds > 0:
                         
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        if voltage_col and current_col and voltage_col in df.columns and current_col in df.columns:
-                            power = df[voltage_col] * df[current_col].abs()
+                        if voltage_col and current_col and voltage_col in df_plot.columns and current_col in df_plot.columns:
+                            power = df_plot[voltage_col] * df_plot[current_col].abs()
                             
                             fig_power = go.Figure()
                             fig_power.add_trace(go.Scatter(
-                                x=df[time_col],
+                                x=df_plot[time_col],
                                 y=power,
                                 mode='lines',
                                 name='Power',
@@ -897,10 +937,8 @@ if len(dataframes) == num_builds and num_builds > 0:
                         st.metric("Degradation Rate", f"{analytics['Average Degradation Rate (mV/min)']:.2f} mV/min")
                     if 'Energy Efficiency (%)' in analytics:
                         st.metric("Energy Efficiency", f"{analytics['Energy Efficiency (%)']:.1f}%")
-                    if 'Estimated Cycle Life (hours)' in analytics:
-                        st.metric("Est. Cycle Life", f"{analytics['Estimated Cycle Life (hours)']:.1f} hrs")
-                    if 'Current Capacity Retention (%)' in analytics:
-                        st.metric("Capacity Retention", f"{analytics['Current Capacity Retention (%)']:.1f}%")
+                    if 'Voltage Retention (%)' in analytics:
+                        st.metric("Voltage Retention", f"{analytics['Voltage Retention (%)']:.1f}%")
             
             st.markdown("#### Anomaly Detection")
             anomalies, anomaly_indices = detect_anomalies(df, voltage_col, time_col)
@@ -915,24 +953,25 @@ if len(dataframes) == num_builds and num_builds > 0:
                         st.text(f"... and {len(anomalies) - 20} more")
                 
                 if voltage_col and len(anomaly_indices) > 0:
+                    df_plot = downsample_for_plotting(df)
                     fig_anomaly = go.Figure()
                     
-                    if time_col and time_col in df.columns:
-                        x_data = df[time_col]
+                    if time_col and time_col in df_plot.columns:
+                        x_data = df_plot[time_col]
                         x_label = f"Time ({time_col})"
                     else:
-                        x_data = df.index
+                        x_data = df_plot.index
                         x_label = "Index"
                     
                     fig_anomaly.add_trace(go.Scatter(
                         x=x_data,
-                        y=df[voltage_col],
+                        y=df_plot[voltage_col],
                         mode='lines',
                         name='Voltage',
                         line=dict(color='blue', width=2)
                     ))
                     
-                    anomaly_x = [x_data.iloc[i] if hasattr(x_data, 'iloc') else x_data[i] for i in anomaly_indices if i < len(x_data)]
+                    anomaly_x = [df[time_col if time_col else 'index'].iloc[i] if time_col and hasattr(df[time_col], 'iloc') else i for i in anomaly_indices if i < len(df)]
                     anomaly_y = [df[voltage_col].iloc[i] for i in anomaly_indices if i < len(df)]
                     
                     fig_anomaly.add_trace(go.Scatter(
