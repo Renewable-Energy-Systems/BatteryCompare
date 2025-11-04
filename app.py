@@ -11,6 +11,12 @@ import os
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float
 from sqlalchemy.orm import declarative_base, sessionmaker
 import json
+from reportlab.lib import colors as rl_colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
@@ -578,6 +584,240 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
     report.append("=" * 80)
     
     return "\n".join(report)
+
+def generate_pdf_report(metrics_df, build_names, metadata_list, 
+                        min_activation_voltage,
+                        use_standards=False, std_max_onload_voltage=None, 
+                        std_max_oc_voltage=None, std_activation_time=None, 
+                        std_duration=None, std_activation_time_ms=None,
+                        std_duration_sec=None):
+    """Generate a comprehensive PDF report with all metrics and comparisons"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        textColor=colors.HexColor('#1f77b4'),
+        spaceAfter=12,
+        alignment=TA_CENTER
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=12,
+        textColor=colors.HexColor('#2ca02c'),
+        spaceAfter=6,
+        spaceBefore=12
+    )
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    story.append(Paragraph("BATTERY DISCHARGE ANALYSIS", title_style))
+    story.append(Paragraph("Detailed Performance Report", styles['Normal']))
+    story.append(Spacer(1, 0.2*inch))
+    
+    info_data = [
+        ['Generated:', timestamp],
+        ['Number of Builds:', str(len(build_names))],
+        ['Min. Voltage for Activation:', f"{min_activation_voltage} V"]
+    ]
+    info_table = Table(info_data, colWidths=[2*inch, 4*inch])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(info_table)
+    story.append(Spacer(1, 0.2*inch))
+    
+    story.append(Paragraph("Build Information", heading_style))
+    build_data = [['Build', 'Battery Code', 'Temperature', 'Build ID']]
+    for i, (name, metadata) in enumerate(zip(build_names, metadata_list if metadata_list else [{}]*len(build_names))):
+        build_data.append([
+            name,
+            metadata.get('battery_code', 'N/A') if metadata else 'N/A',
+            metadata.get('temperature', 'N/A') if metadata else 'N/A',
+            metadata.get('build_id', 'N/A') if metadata else 'N/A'
+        ])
+    
+    build_table = Table(build_data, colWidths=[2*inch, 1.5*inch, 1.2*inch, 1.3*inch])
+    build_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2ca02c')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+    ]))
+    story.append(build_table)
+    story.append(Spacer(1, 0.3*inch))
+    
+    story.append(Paragraph("Performance Metrics", heading_style))
+    
+    if metrics_df is not None and not metrics_df.empty:
+        key_metrics = ['Max On-Load Voltage (V)', 'Max Open Circuit Voltage (V)', 
+                      'Activation Time (Sec)', 'Duration (Sec)']
+        
+        metrics_data = [['Build'] + [m for m in key_metrics if m in metrics_df.columns]]
+        
+        for build_name in metrics_df.index:
+            row = [build_name]
+            for metric in key_metrics:
+                if metric in metrics_df.columns:
+                    value = metrics_df.loc[build_name, metric]
+                    if pd.notna(value):
+                        row.append(f"{value:.3f}")
+                    else:
+                        row.append("N/A")
+            metrics_data.append(row)
+        
+        col_widths = [2*inch] + [1.5*inch] * (len(metrics_data[0]) - 1)
+        metrics_table = Table(metrics_data, colWidths=col_widths)
+        metrics_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        story.append(metrics_table)
+        story.append(Spacer(1, 0.3*inch))
+    
+    if use_standards and any([std_max_onload_voltage, std_max_oc_voltage, std_activation_time, std_duration]):
+        story.append(PageBreak())
+        story.append(Paragraph("Standard Performance Benchmarks", heading_style))
+        
+        std_data = [['Metric', 'Standard Value']]
+        if std_max_onload_voltage:
+            std_data.append(['Max On-Load Voltage', f"{std_max_onload_voltage} V"])
+        if std_max_oc_voltage:
+            std_data.append(['Max Open Circuit Voltage', f"{std_max_oc_voltage} V"])
+        if std_activation_time_ms:
+            std_data.append(['Max Activation Time', f"{std_activation_time_ms} ms ({std_activation_time:.4f} min)"])
+        if std_duration_sec:
+            std_data.append(['Min Duration', f"{std_duration_sec} s ({std_duration:.4f} min)"])
+        
+        std_table = Table(std_data, colWidths=[3*inch, 3*inch])
+        std_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ff7f0e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightyellow),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        story.append(std_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        story.append(Paragraph("Performance Comparison vs Standards", heading_style))
+        
+        for build_name in metrics_df.index:
+            comp_data = [['Metric', 'Actual', 'Standard', 'Difference', 'Status']]
+            passes = 0
+            fails = 0
+            
+            if std_max_onload_voltage and 'Max On-Load Voltage (V)' in metrics_df.columns:
+                actual = metrics_df.loc[build_name, 'Max On-Load Voltage (V)']
+                if pd.notna(actual):
+                    diff = actual - std_max_onload_voltage
+                    status = 'PASS' if actual >= std_max_onload_voltage else 'FAIL'
+                    if status == 'PASS':
+                        passes += 1
+                    else:
+                        fails += 1
+                    comp_data.append(['Max On-Load V', f"{actual:.3f} V", f"{std_max_onload_voltage} V", f"{diff:+.3f} V", status])
+            
+            if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
+                actual = metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)']
+                if pd.notna(actual):
+                    diff = actual - std_max_oc_voltage
+                    status = 'PASS' if actual >= std_max_oc_voltage else 'FAIL'
+                    if status == 'PASS':
+                        passes += 1
+                    else:
+                        fails += 1
+                    comp_data.append(['Max OC V', f"{actual:.3f} V", f"{std_max_oc_voltage} V", f"{diff:+.3f} V", status])
+            
+            if std_activation_time and 'Activation Time (Sec)' in metrics_df.columns:
+                actual = metrics_df.loc[build_name, 'Activation Time (Sec)']
+                if pd.notna(actual):
+                    diff_sec = actual - (std_activation_time_ms / 1000 if std_activation_time_ms else std_activation_time * 60)
+                    status = 'PASS' if actual <= (std_activation_time_ms / 1000 if std_activation_time_ms else std_activation_time * 60) else 'FAIL'
+                    if status == 'PASS':
+                        passes += 1
+                    else:
+                        fails += 1
+                    std_val = f"{std_activation_time_ms} ms" if std_activation_time_ms else f"{std_activation_time} min"
+                    comp_data.append(['Activation Time', f"{actual:.3f} sec", std_val, f"{diff_sec:+.3f} sec", status])
+            
+            if std_duration and 'Duration (Sec)' in metrics_df.columns:
+                actual = metrics_df.loc[build_name, 'Duration (Sec)']
+                if pd.notna(actual):
+                    diff_sec = actual - (std_duration_sec if std_duration_sec else std_duration * 60)
+                    status = 'PASS' if actual >= (std_duration_sec if std_duration_sec else std_duration * 60) else 'FAIL'
+                    if status == 'PASS':
+                        passes += 1
+                    else:
+                        fails += 1
+                    std_val = f"{std_duration_sec} sec" if std_duration_sec else f"{std_duration} min"
+                    comp_data.append(['Duration', f"{actual:.3f} sec", std_val, f"{diff_sec:+.3f} sec", status])
+            
+            story.append(Paragraph(f"<b>{build_name}</b>", styles['Normal']))
+            story.append(Spacer(1, 0.1*inch))
+            
+            comp_table = Table(comp_data, colWidths=[1.8*inch, 1.2*inch, 1.2*inch, 1.2*inch, 0.8*inch])
+            comp_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+            ]))
+            
+            for i in range(1, len(comp_data)):
+                status = comp_data[i][-1]
+                if status == 'PASS':
+                    comp_table.setStyle(TableStyle([
+                        ('BACKGROUND', (-1, i), (-1, i), colors.lightgreen),
+                        ('TEXTCOLOR', (-1, i), (-1, i), colors.darkgreen),
+                    ]))
+                elif status == 'FAIL':
+                    comp_table.setStyle(TableStyle([
+                        ('BACKGROUND', (-1, i), (-1, i), colors.lightcoral),
+                        ('TEXTCOLOR', (-1, i), (-1, i), colors.darkred),
+                    ]))
+            
+            story.append(comp_table)
+            
+            total_tests = passes + fails
+            if total_tests > 0:
+                pass_rate = (passes / total_tests) * 100
+                summary = f"Overall: {passes}/{total_tests} tests passed ({pass_rate:.1f}%)"
+                story.append(Spacer(1, 0.1*inch))
+                story.append(Paragraph(summary, styles['Normal']))
+            
+            story.append(Spacer(1, 0.2*inch))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 def calculate_advanced_analytics(df, time_col, voltage_col, current_col=None):
     """Calculate advanced battery analytics"""
@@ -1174,10 +1414,10 @@ if len(dataframes) == num_builds and num_builds > 0:
                         st.metric("Max On-Load V", f"{metrics['Max On-Load Voltage (V)']:.3f} V")
                     if 'Max Open Circuit Voltage (V)' in metrics and metrics['Max Open Circuit Voltage (V)'] is not None:
                         st.metric("Max OC V", f"{metrics['Max Open Circuit Voltage (V)']:.3f} V")
-                    if 'Activation Time (min)' in metrics and metrics['Activation Time (min)'] is not None:
-                        st.metric("Activation Time", f"{metrics['Activation Time (min)']:.2f} min")
-                    if 'Duration (min)' in metrics and metrics['Duration (min)'] is not None:
-                        st.metric("Duration", f"{metrics['Duration (min)']:.2f} min")
+                    if 'Activation Time (Sec)' in metrics and metrics['Activation Time (Sec)'] is not None:
+                        st.metric("Activation Time", f"{metrics['Activation Time (Sec)']:.2f} sec")
+                    if 'Duration (Sec)' in metrics and metrics['Duration (Sec)'] is not None:
+                        st.metric("Duration", f"{metrics['Duration (Sec)']:.2f} sec")
         else:
             # For many builds, use a table
             st.subheader("📊 Key Performance Metrics")
@@ -1297,7 +1537,7 @@ if len(dataframes) == num_builds and num_builds > 0:
             metrics_df = pd.DataFrame(all_build_metrics)
             metrics_df = metrics_df.set_index('Build')
             
-            col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
+            col1, col2, col3, col4, col5, col6 = st.columns([0.5, 1, 1, 1, 1, 1])
             with col2:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 excel_data = export_to_excel(dataframes, build_names, metrics_df)
@@ -1332,6 +1572,21 @@ if len(dataframes) == num_builds and num_builds > 0:
                     mime="text/plain"
                 )
             with col5:
+                # Generate PDF report
+                pdf_data = generate_pdf_report(
+                    metrics_df, build_names, metadata_list,
+                    min_activation_voltage,
+                    use_standards, std_max_onload_voltage,
+                    std_max_oc_voltage, std_activation_time, std_duration,
+                    std_activation_time_ms, std_duration_sec
+                )
+                st.download_button(
+                    label="📕 PDF",
+                    data=pdf_data,
+                    file_name=f"battery_report_{timestamp}.pdf",
+                    mime="application/pdf"
+                )
+            with col6:
                 if DATABASE_URL and Session:
                     if st.button("💾 Save", key='save_comparison_btn'):
                         comparison_name = st.text_input("Comparison name:", value=f"Comparison_{timestamp}", key='comparison_name_input')
