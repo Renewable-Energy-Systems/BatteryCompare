@@ -386,7 +386,8 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
                              min_activation_voltage, end_discharge_voltage,
                              use_standards=False, std_max_onload_voltage=None, 
                              std_max_oc_voltage=None, std_activation_time=None, 
-                             std_duration=None):
+                             std_duration=None, std_activation_time_ms=None,
+                             std_duration_sec=None):
     """Generate a comprehensive text report with all metrics and comparisons"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -466,9 +467,17 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
         if std_max_oc_voltage:
             report.append(f"  Max Open Circuit Voltage: {std_max_oc_voltage} V")
         if std_activation_time:
-            report.append(f"  Max Activation Time: {std_activation_time} min")
+            # Display in ms if provided, otherwise show in minutes
+            if std_activation_time_ms:
+                report.append(f"  Max Activation Time: {std_activation_time_ms} ms ({std_activation_time:.4f} min)")
+            else:
+                report.append(f"  Max Activation Time: {std_activation_time} min")
         if std_duration:
-            report.append(f"  Min Duration: {std_duration} min")
+            # Display in seconds if provided, otherwise show in minutes
+            if std_duration_sec:
+                report.append(f"  Min Duration: {std_duration_sec} s ({std_duration:.4f} min)")
+            else:
+                report.append(f"  Min Duration: {std_duration} min")
         report.append("")
         
         for build_name in metrics_df.index:
@@ -931,13 +940,18 @@ if data_mode == "Upload Files":
     use_standards = st.sidebar.checkbox("Enable standard performance comparison", value=False)
     
     if use_standards:
-        std_max_onload_voltage = st.sidebar.number_input(
-            "Std. Max On-Load Voltage (V):",
-            min_value=0.0,
-            max_value=100.0,
-            value=1.5,
-            step=0.1
-        )
+        use_onload_std = st.sidebar.checkbox("Set Std. Max On-Load Voltage", value=False, help="Optional: Enable if you want to compare against on-load voltage standard")
+        
+        if use_onload_std:
+            std_max_onload_voltage = st.sidebar.number_input(
+                "Std. Max On-Load Voltage (V):",
+                min_value=0.0,
+                max_value=100.0,
+                value=1.5,
+                step=0.1
+            )
+        else:
+            std_max_onload_voltage = None
         
         std_max_oc_voltage = st.sidebar.number_input(
             "Std. Max Open Circuit Voltage (V):",
@@ -947,28 +961,34 @@ if data_mode == "Upload Files":
             step=0.1
         )
         
-        std_activation_time = st.sidebar.number_input(
-            "Std. Max Activation Time (min):",
+        std_activation_time_ms = st.sidebar.number_input(
+            "Std. Max Activation Time (ms):",
             min_value=0.0,
-            max_value=1000.0,
-            value=1.0,
-            step=0.1,
-            help="Maximum acceptable time to reach min voltage"
+            max_value=100000.0,
+            value=1000.0,
+            step=10.0,
+            help="Maximum acceptable time to reach min voltage in milliseconds"
         )
+        # Convert ms to minutes for comparison with metrics
+        std_activation_time = std_activation_time_ms / 60000.0 if std_activation_time_ms > 0 else None
         
-        std_duration = st.sidebar.number_input(
-            "Std. Min Duration (min):",
+        std_duration_sec = st.sidebar.number_input(
+            "Std. Min Duration (s):",
             min_value=0.0,
-            max_value=10000.0,
-            value=50.0,
-            step=1.0,
-            help="Minimum acceptable discharge duration"
+            max_value=100000.0,
+            value=400.0,
+            step=10.0,
+            help="Minimum acceptable discharge duration in seconds"
         )
+        # Convert seconds to minutes for comparison with metrics
+        std_duration = std_duration_sec / 60.0 if std_duration_sec > 0 else None
     else:
         std_max_onload_voltage = None
         std_max_oc_voltage = None
         std_activation_time = None
         std_duration = None
+        std_activation_time_ms = None
+        std_duration_sec = None
     
     st.sidebar.markdown("---")
     
@@ -1306,7 +1326,8 @@ if len(dataframes) == num_builds and num_builds > 0:
                     metrics_df, build_names, metadata_list,
                     min_activation_voltage, end_discharge_voltage,
                     use_standards, std_max_onload_voltage,
-                    std_max_oc_voltage, std_activation_time, std_duration
+                    std_max_oc_voltage, std_activation_time, std_duration,
+                    std_activation_time_ms, std_duration_sec
                 )
                 st.download_button(
                     label="📄 Report",

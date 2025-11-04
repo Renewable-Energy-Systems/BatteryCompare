@@ -21,7 +21,11 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 - Optional comparison against target performance levels
 - Pass/fail status for each metric with visual indicators
 - Overall performance summary showing percentage of tests passed
-- Configurable standard values for all four new metrics
+- Configurable standard values for metrics:
+  - Max On-Load Voltage: Optional (can be NULL via checkbox)
+  - Max Open Circuit Voltage: Required when benchmarks enabled
+  - Max Activation Time: Input in milliseconds (ms)
+  - Min Duration: Input in seconds (s)
 
 **Detailed Reporting**:
 - Comprehensive text report generation with all test data
