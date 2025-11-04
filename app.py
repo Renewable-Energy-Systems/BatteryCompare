@@ -382,6 +382,186 @@ def export_to_csv(dataframes, build_names, metrics_df):
         return metrics_df.to_csv(index=True).encode('utf-8')
     return None
 
+def generate_detailed_report(metrics_df, build_names, metadata_list, 
+                             min_activation_voltage, end_discharge_voltage,
+                             use_standards=False, std_max_onload_voltage=None, 
+                             std_max_oc_voltage=None, std_activation_time=None, 
+                             std_duration=None):
+    """Generate a comprehensive text report with all metrics and comparisons"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    report = []
+    report.append("=" * 80)
+    report.append("BATTERY DISCHARGE ANALYSIS - DETAILED REPORT")
+    report.append("=" * 80)
+    report.append(f"Generated: {timestamp}")
+    report.append(f"Number of Builds Analyzed: {len(build_names)}")
+    report.append("")
+    
+    # Test Configuration
+    report.append("-" * 80)
+    report.append("TEST CONFIGURATION")
+    report.append("-" * 80)
+    report.append(f"Min. Voltage for Activation: {min_activation_voltage} V")
+    report.append(f"Voltage at End of Discharge: {end_discharge_voltage} V")
+    report.append("")
+    
+    # Build Information
+    report.append("-" * 80)
+    report.append("BUILD INFORMATION")
+    report.append("-" * 80)
+    for i, (name, metadata) in enumerate(zip(build_names, metadata_list if metadata_list else [{}]*len(build_names))):
+        report.append(f"\nBuild {i+1}: {name}")
+        if metadata and any(metadata.values()):
+            if metadata.get('battery_code'):
+                report.append(f"  Battery Code: {metadata['battery_code']}")
+            if metadata.get('temperature'):
+                report.append(f"  Temperature: {metadata['temperature']}")
+            if metadata.get('build_id'):
+                report.append(f"  Build ID: {metadata['build_id']}")
+    report.append("")
+    
+    # Performance Metrics
+    report.append("-" * 80)
+    report.append("PERFORMANCE METRICS")
+    report.append("-" * 80)
+    
+    if metrics_df is not None and not metrics_df.empty:
+        for build_name in metrics_df.index:
+            report.append(f"\n{build_name}:")
+            report.append("-" * 40)
+            for col in metrics_df.columns:
+                value = metrics_df.loc[build_name, col]
+                if pd.notna(value):
+                    report.append(f"  {col}: {value:.4f}")
+                else:
+                    report.append(f"  {col}: N/A")
+    report.append("")
+    
+    # Statistical Summary
+    report.append("-" * 80)
+    report.append("STATISTICAL SUMMARY")
+    report.append("-" * 80)
+    
+    if metrics_df is not None:
+        numeric_cols = metrics_df.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 0:
+            for col in numeric_cols:
+                report.append(f"\n{col}:")
+                report.append(f"  Mean: {metrics_df[col].mean():.4f}")
+                report.append(f"  Std Dev: {metrics_df[col].std():.4f}")
+                report.append(f"  Min: {metrics_df[col].min():.4f}")
+                report.append(f"  Max: {metrics_df[col].max():.4f}")
+                report.append(f"  Range: {metrics_df[col].max() - metrics_df[col].min():.4f}")
+    report.append("")
+    
+    # Standard Performance Comparison
+    if use_standards and any([std_max_onload_voltage, std_max_oc_voltage, std_activation_time, std_duration]):
+        report.append("-" * 80)
+        report.append("STANDARD PERFORMANCE BENCHMARKS COMPARISON")
+        report.append("-" * 80)
+        report.append("\nStandard Values:")
+        if std_max_onload_voltage:
+            report.append(f"  Max On-Load Voltage: {std_max_onload_voltage} V")
+        if std_max_oc_voltage:
+            report.append(f"  Max Open Circuit Voltage: {std_max_oc_voltage} V")
+        if std_activation_time:
+            report.append(f"  Max Activation Time: {std_activation_time} min")
+        if std_duration:
+            report.append(f"  Min Duration: {std_duration} min")
+        report.append("")
+        
+        for build_name in metrics_df.index:
+            report.append(f"\n{build_name} Performance:")
+            report.append("-" * 40)
+            
+            passes = 0
+            fails = 0
+            
+            # Check each metric
+            if std_max_onload_voltage and 'Max On-Load Voltage (V)' in metrics_df.columns:
+                actual = metrics_df.loc[build_name, 'Max On-Load Voltage (V)']
+                if pd.notna(actual):
+                    diff = actual - std_max_onload_voltage
+                    status = 'PASS' if actual >= std_max_onload_voltage else 'FAIL'
+                    if status == 'PASS':
+                        passes += 1
+                    else:
+                        fails += 1
+                    report.append(f"  Max On-Load Voltage: {actual:.4f} V (Std: {std_max_onload_voltage} V, Diff: {diff:+.4f} V) - {status}")
+            
+            if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
+                actual = metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)']
+                if pd.notna(actual):
+                    diff = actual - std_max_oc_voltage
+                    status = 'PASS' if actual >= std_max_oc_voltage else 'FAIL'
+                    if status == 'PASS':
+                        passes += 1
+                    else:
+                        fails += 1
+                    report.append(f"  Max Open Circuit Voltage: {actual:.4f} V (Std: {std_max_oc_voltage} V, Diff: {diff:+.4f} V) - {status}")
+            
+            if std_activation_time and 'Activation Time (min)' in metrics_df.columns:
+                actual = metrics_df.loc[build_name, 'Activation Time (min)']
+                if pd.notna(actual):
+                    diff = actual - std_activation_time
+                    status = 'PASS' if actual <= std_activation_time else 'FAIL'
+                    if status == 'PASS':
+                        passes += 1
+                    else:
+                        fails += 1
+                    report.append(f"  Activation Time: {actual:.4f} min (Std: {std_activation_time} min, Diff: {diff:+.4f} min) - {status}")
+            
+            if std_duration and 'Duration (min)' in metrics_df.columns:
+                actual = metrics_df.loc[build_name, 'Duration (min)']
+                if pd.notna(actual):
+                    diff = actual - std_duration
+                    status = 'PASS' if actual >= std_duration else 'FAIL'
+                    if status == 'PASS':
+                        passes += 1
+                    else:
+                        fails += 1
+                    report.append(f"  Duration: {actual:.4f} min (Std: {std_duration} min, Diff: {diff:+.4f} min) - {status}")
+            
+            total_tests = passes + fails
+            if total_tests > 0:
+                pass_rate = (passes / total_tests) * 100
+                report.append(f"\n  Overall: {passes}/{total_tests} tests passed ({pass_rate:.1f}%)")
+        
+        report.append("")
+    
+    # Build-to-Build Comparison
+    if len(metrics_df) >= 2:
+        report.append("-" * 80)
+        report.append("BUILD-TO-BUILD COMPARISON")
+        report.append("-" * 80)
+        numeric_cols = metrics_df.select_dtypes(include=[np.number]).columns
+        
+        for i in range(len(metrics_df) - 1):
+            build1 = metrics_df.index[i]
+            build2 = metrics_df.index[i + 1]
+            
+            report.append(f"\n{build1} vs {build2}:")
+            report.append("-" * 40)
+            
+            for col in numeric_cols:
+                val1 = metrics_df.loc[build1, col]
+                val2 = metrics_df.loc[build2, col]
+                if pd.notna(val1) and pd.notna(val2):
+                    diff = val2 - val1
+                    pct_change = (diff / val1 * 100) if val1 != 0 else 0
+                    report.append(f"  {col}:")
+                    report.append(f"    {build1}: {val1:.4f}")
+                    report.append(f"    {build2}: {val2:.4f}")
+                    report.append(f"    Difference: {diff:+.4f} ({pct_change:+.2f}%)")
+        report.append("")
+    
+    report.append("=" * 80)
+    report.append("END OF REPORT")
+    report.append("=" * 80)
+    
+    return "\n".join(report)
+
 def calculate_advanced_analytics(df, time_col, voltage_col, current_col=None):
     """Calculate advanced battery analytics"""
     analytics = {}
@@ -729,18 +909,18 @@ if data_mode == "Upload Files":
     min_activation_voltage = st.sidebar.number_input(
         "Min. voltage for activation (V):",
         min_value=0.0,
-        max_value=10.0,
+        max_value=100.0,
         value=1.0,
-        step=0.01,
+        step=0.1,
         help="Minimum voltage threshold to calculate activation time"
     )
     
     end_discharge_voltage = st.sidebar.number_input(
         "Voltage at end of discharge (V):",
         min_value=0.0,
-        max_value=10.0,
+        max_value=100.0,
         value=0.9,
-        step=0.01,
+        step=0.1,
         help="Voltage threshold to calculate discharge duration"
     )
     
@@ -754,17 +934,17 @@ if data_mode == "Upload Files":
         std_max_onload_voltage = st.sidebar.number_input(
             "Std. Max On-Load Voltage (V):",
             min_value=0.0,
-            max_value=10.0,
+            max_value=100.0,
             value=1.5,
-            step=0.01
+            step=0.1
         )
         
         std_max_oc_voltage = st.sidebar.number_input(
             "Std. Max Open Circuit Voltage (V):",
             min_value=0.0,
-            max_value=10.0,
+            max_value=100.0,
             value=1.6,
-            step=0.01
+            step=0.1
         )
         
         std_activation_time = st.sidebar.number_input(
@@ -1101,12 +1281,12 @@ if len(dataframes) == num_builds and num_builds > 0:
             metrics_df = pd.DataFrame(all_build_metrics)
             metrics_df = metrics_df.set_index('Build')
             
-            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
             with col2:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 excel_data = export_to_excel(dataframes, build_names, metrics_df)
                 st.download_button(
-                    label="📥 Export Excel",
+                    label="📥 Excel",
                     data=excel_data,
                     file_name=f"battery_analysis_{timestamp}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1115,14 +1295,28 @@ if len(dataframes) == num_builds and num_builds > 0:
                 csv_data = export_to_csv(dataframes, build_names, metrics_df)
                 if csv_data:
                     st.download_button(
-                        label="📥 Export CSV",
+                        label="📥 CSV",
                         data=csv_data,
                         file_name=f"battery_metrics_{timestamp}.csv",
                         mime="text/csv"
                     )
             with col4:
+                # Generate detailed text report
+                report_text = generate_detailed_report(
+                    metrics_df, build_names, metadata_list,
+                    min_activation_voltage, end_discharge_voltage,
+                    use_standards, std_max_onload_voltage,
+                    std_max_oc_voltage, std_activation_time, std_duration
+                )
+                st.download_button(
+                    label="📄 Report",
+                    data=report_text.encode('utf-8'),
+                    file_name=f"battery_report_{timestamp}.txt",
+                    mime="text/plain"
+                )
+            with col5:
                 if DATABASE_URL and Session:
-                    if st.button("💾 Save to DB", key='save_comparison_btn'):
+                    if st.button("💾 Save", key='save_comparison_btn'):
                         comparison_name = st.text_input("Comparison name:", value=f"Comparison_{timestamp}", key='comparison_name_input')
                         if comparison_name:
                             success, msg = save_comparison_to_db(comparison_name, dataframes, build_names, metrics_df)

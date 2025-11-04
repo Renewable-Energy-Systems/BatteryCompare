@@ -23,6 +23,13 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 - Overall performance summary showing percentage of tests passed
 - Configurable standard values for all four new metrics
 
+**Detailed Reporting**:
+- Comprehensive text report generation with all test data
+- Includes: test configuration, build information, performance metrics, statistical summary
+- Standard benchmark comparisons with pass/fail status
+- Build-to-build comparisons with differences and percentage changes
+- Downloadable in multiple formats: Excel, CSV, and formatted text report
+
 ## Current Use Case
 
 **Primary Battery Temperature Testing**:
@@ -31,6 +38,11 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 - Data characteristics: High-frequency sampling (10ms intervals, 300k+ data points per test)
 - Duration: Typical tests run for ~3000 seconds (50 minutes)
 - Metrics focus: Voltage retention, energy output, degradation rates across temperatures
+
+**Voltage Range Support**:
+- Low-voltage batteries: 0.9-1.0V typical operating range
+- High-voltage batteries: 27-35V typical operating range (e.g., madhava project)
+- All input fields support 0-100V range to accommodate diverse battery types
 
 ## User Preferences
 
