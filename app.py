@@ -236,8 +236,8 @@ def downsample_for_plotting(df, max_points=10000):
     
     return df.iloc[indices].copy()
 
-def calculate_metrics(df, time_col, voltage_col, current_col=None):
-    """Calculate key battery metrics"""
+def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activation_voltage=1.0, end_discharge_voltage=0.9):
+    """Calculate key battery metrics including new performance metrics"""
     metrics = {}
     
     if voltage_col and voltage_col in df.columns:
@@ -245,6 +245,26 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None):
         metrics['Min Voltage (V)'] = float(df[voltage_col].min())
         metrics['Average Voltage (V)'] = float(df[voltage_col].mean())
         metrics['Voltage Range (V)'] = metrics['Max Voltage (V)'] - metrics['Min Voltage (V)']
+        
+        # Calculate max open circuit voltage and max on-load voltage
+        if current_col and current_col in df.columns:
+            # Open circuit: when current is 0 or very close to 0 (< 0.01A)
+            open_circuit_mask = df[current_col].abs() < 0.01
+            on_load_mask = df[current_col].abs() >= 0.01
+            
+            if open_circuit_mask.any():
+                metrics['Max Open Circuit Voltage (V)'] = float(df.loc[open_circuit_mask, voltage_col].max())
+            else:
+                metrics['Max Open Circuit Voltage (V)'] = None
+            
+            if on_load_mask.any():
+                metrics['Max On-Load Voltage (V)'] = float(df.loc[on_load_mask, voltage_col].max())
+            else:
+                metrics['Max On-Load Voltage (V)'] = None
+        else:
+            # If no current column, assume all measurements are on-load
+            metrics['Max On-Load Voltage (V)'] = float(df[voltage_col].max())
+            metrics['Max Open Circuit Voltage (V)'] = None
     
     if current_col and current_col in df.columns:
         metrics['Max Current (A)'] = float(df[current_col].max())
@@ -283,6 +303,42 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None):
                 time_range_minutes = 0
         
         metrics['Total Time (min)'] = time_range_minutes
+        
+        # Calculate activation time (time to reach min_activation_voltage during discharge)
+        # For discharge curves, voltage starts high and drops, so we look for when it drops to the threshold
+        if voltage_col and voltage_col in df.columns:
+            activation_mask = df[voltage_col] <= min_activation_voltage
+            if activation_mask.any():
+                first_activation_idx = activation_mask.idxmax()
+                activation_time = time_series.iloc[first_activation_idx] - time_series.iloc[0]
+                
+                if pd.api.types.is_timedelta64_dtype(activation_time):
+                    activation_time_minutes = activation_time.total_seconds() / 60
+                elif isinstance(activation_time, pd.Timedelta):
+                    activation_time_minutes = activation_time.total_seconds() / 60
+                else:
+                    activation_time_minutes = float(activation_time)
+                
+                metrics['Activation Time (min)'] = activation_time_minutes
+            else:
+                metrics['Activation Time (min)'] = None
+            
+            # Calculate duration (time to reach end_discharge_voltage)
+            end_mask = df[voltage_col] <= end_discharge_voltage
+            if end_mask.any():
+                first_end_idx = end_mask.idxmax()
+                duration_time = time_series.iloc[first_end_idx] - time_series.iloc[0]
+                
+                if pd.api.types.is_timedelta64_dtype(duration_time):
+                    duration_minutes = duration_time.total_seconds() / 60
+                elif isinstance(duration_time, pd.Timedelta):
+                    duration_minutes = duration_time.total_seconds() / 60
+                else:
+                    duration_minutes = float(duration_time)
+                
+                metrics['Duration (min)'] = duration_minutes
+            else:
+                metrics['Duration (min)'] = None
         
         if voltage_col and voltage_col in df.columns and time_range_minutes > 0:
             voltage_drop = df[voltage_col].iloc[0] - df[voltage_col].iloc[-1]
@@ -653,10 +709,88 @@ build_names = []
 dataframes = []
 metadata_list = []
 
+# Default performance specifications
+min_activation_voltage = 1.0
+end_discharge_voltage = 0.9
+use_standards = False
+std_max_onload_voltage = None
+std_max_oc_voltage = None
+std_activation_time = None
+std_duration = None
+
 if data_mode == "Upload Files":
-    st.sidebar.markdown("Upload 2-3 battery discharge data files for comparison")
+    st.sidebar.markdown("Upload battery discharge data files for comparison")
     
-    num_builds = st.sidebar.radio("Number of builds to compare:", [2, 3], index=0)
+    num_builds = st.sidebar.number_input("Number of builds to compare:", min_value=1, max_value=50, value=2, step=1)
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ⚙️ Performance Specifications")
+    
+    min_activation_voltage = st.sidebar.number_input(
+        "Min. voltage for activation (V):",
+        min_value=0.0,
+        max_value=10.0,
+        value=1.0,
+        step=0.01,
+        help="Minimum voltage threshold to calculate activation time"
+    )
+    
+    end_discharge_voltage = st.sidebar.number_input(
+        "Voltage at end of discharge (V):",
+        min_value=0.0,
+        max_value=10.0,
+        value=0.9,
+        step=0.01,
+        help="Voltage threshold to calculate discharge duration"
+    )
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🎯 Standard Performance Benchmarks")
+    st.sidebar.markdown("*Optional: Set target values for comparison*")
+    
+    use_standards = st.sidebar.checkbox("Enable standard performance comparison", value=False)
+    
+    if use_standards:
+        std_max_onload_voltage = st.sidebar.number_input(
+            "Std. Max On-Load Voltage (V):",
+            min_value=0.0,
+            max_value=10.0,
+            value=1.5,
+            step=0.01
+        )
+        
+        std_max_oc_voltage = st.sidebar.number_input(
+            "Std. Max Open Circuit Voltage (V):",
+            min_value=0.0,
+            max_value=10.0,
+            value=1.6,
+            step=0.01
+        )
+        
+        std_activation_time = st.sidebar.number_input(
+            "Std. Max Activation Time (min):",
+            min_value=0.0,
+            max_value=1000.0,
+            value=1.0,
+            step=0.1,
+            help="Maximum acceptable time to reach min voltage"
+        )
+        
+        std_duration = st.sidebar.number_input(
+            "Std. Min Duration (min):",
+            min_value=0.0,
+            max_value=10000.0,
+            value=50.0,
+            step=1.0,
+            help="Minimum acceptable discharge duration"
+        )
+    else:
+        std_max_onload_voltage = None
+        std_max_oc_voltage = None
+        std_activation_time = None
+        std_duration = None
+    
+    st.sidebar.markdown("---")
     
     if 'loaded_dataframes' in st.session_state and 'loaded_build_names' in st.session_state:
         dataframes = st.session_state['loaded_dataframes']
@@ -807,7 +941,11 @@ if len(dataframes) == num_builds and num_builds > 0:
                     hovertemplate=f'<b>{name}</b><br>{x_label}: %{{x}}<br>Voltage: %{{y:.3f}} V<extra></extra>'
                 ))
                 
-                metrics = calculate_metrics(df, time_col, voltage_col, current_col)
+                metrics = calculate_metrics(
+                    df, time_col, voltage_col, current_col, 
+                    min_activation_voltage=min_activation_voltage,
+                    end_discharge_voltage=end_discharge_voltage
+                )
                 metrics['Build'] = name
                 all_metrics.append(metrics)
         
@@ -828,16 +966,44 @@ if len(dataframes) == num_builds and num_builds > 0:
         
         st.plotly_chart(fig, use_container_width=True)
         
-        cols = st.columns(num_builds)
-        for idx, metrics in enumerate(all_metrics):
-            with cols[idx]:
-                st.markdown(f"### {metrics['Build']}")
-                if 'Max Voltage (V)' in metrics:
-                    st.metric("Max Voltage", f"{metrics['Max Voltage (V)']:.3f} V")
-                if 'Min Voltage (V)' in metrics:
-                    st.metric("Min Voltage", f"{metrics['Min Voltage (V)']:.3f} V")
-                if 'Average Voltage (V)' in metrics:
-                    st.metric("Avg Voltage", f"{metrics['Average Voltage (V)']:.3f} V")
+        # Display metrics based on number of builds
+        if num_builds <= 4:
+            # For small number of builds, use columns
+            cols = st.columns(num_builds)
+            for idx, metrics in enumerate(all_metrics):
+                with cols[idx]:
+                    st.markdown(f"### {metrics['Build']}")
+                    if 'Max On-Load Voltage (V)' in metrics and metrics['Max On-Load Voltage (V)'] is not None:
+                        st.metric("Max On-Load V", f"{metrics['Max On-Load Voltage (V)']:.3f} V")
+                    if 'Max Open Circuit Voltage (V)' in metrics and metrics['Max Open Circuit Voltage (V)'] is not None:
+                        st.metric("Max OC V", f"{metrics['Max Open Circuit Voltage (V)']:.3f} V")
+                    if 'Activation Time (min)' in metrics and metrics['Activation Time (min)'] is not None:
+                        st.metric("Activation Time", f"{metrics['Activation Time (min)']:.2f} min")
+                    if 'Duration (min)' in metrics and metrics['Duration (min)'] is not None:
+                        st.metric("Duration", f"{metrics['Duration (min)']:.2f} min")
+        else:
+            # For many builds, use a table
+            st.subheader("📊 Key Performance Metrics")
+            metrics_summary = []
+            for metrics in all_metrics:
+                summary = {
+                    'Build': metrics['Build'],
+                    'Max On-Load V': metrics.get('Max On-Load Voltage (V)', 'N/A'),
+                    'Max OC V': metrics.get('Max Open Circuit Voltage (V)', 'N/A'),
+                    'Activation Time (min)': metrics.get('Activation Time (min)', 'N/A'),
+                    'Duration (min)': metrics.get('Duration (min)', 'N/A')
+                }
+                metrics_summary.append(summary)
+            
+            summary_df = pd.DataFrame(metrics_summary)
+            
+            # Format the dataframe
+            format_dict = {}
+            for col in summary_df.columns:
+                if col != 'Build':
+                    format_dict[col] = lambda x: f"{x:.3f}" if isinstance(x, (int, float)) else x
+            
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
     
     with tab2:
         st.header("Multi-Parameter Time-Series Analysis")
@@ -923,7 +1089,11 @@ if len(dataframes) == num_builds and num_builds > 0:
         
         for df, name in zip(dataframes, build_names):
             time_col, voltage_col, current_col, capacity_col = detect_columns(df)
-            metrics = calculate_metrics(df, time_col, voltage_col, current_col)
+            metrics = calculate_metrics(
+                df, time_col, voltage_col, current_col,
+                min_activation_voltage=min_activation_voltage,
+                end_discharge_voltage=end_discharge_voltage
+            )
             metrics['Build'] = name
             all_build_metrics.append(metrics)
         
@@ -1009,6 +1179,92 @@ if len(dataframes) == num_builds and num_builds > 0:
                         'Difference': '{:.4f}',
                         '% Change': '{:.2f}%'
                     }), use_container_width=True)
+                
+                # Standard Performance Comparison
+                if use_standards and any([std_max_onload_voltage, std_max_oc_voltage, std_activation_time, std_duration]):
+                    st.subheader("⭐ Performance vs. Standard Benchmarks")
+                    st.markdown("Compare each build against specified standard performance levels")
+                    
+                    standard_comparison_data = []
+                    
+                    for build_name in metrics_df.index:
+                        build_data = {'Build': build_name}
+                        
+                        # Max On-Load Voltage comparison
+                        if std_max_onload_voltage and 'Max On-Load Voltage (V)' in metrics_df.columns:
+                            actual = metrics_df.loc[build_name, 'Max On-Load Voltage (V)']
+                            if pd.notna(actual):
+                                diff = actual - std_max_onload_voltage
+                                status = '✅ Pass' if actual >= std_max_onload_voltage else '❌ Fail'
+                                build_data['Max On-Load V (Actual)'] = actual
+                                build_data['Max On-Load V (Std)'] = std_max_onload_voltage
+                                build_data['Max On-Load V (Diff)'] = diff
+                                build_data['Max On-Load V (Status)'] = status
+                        
+                        # Max Open Circuit Voltage comparison
+                        if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
+                            actual = metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)']
+                            if pd.notna(actual):
+                                diff = actual - std_max_oc_voltage
+                                status = '✅ Pass' if actual >= std_max_oc_voltage else '❌ Fail'
+                                build_data['Max OC V (Actual)'] = actual
+                                build_data['Max OC V (Std)'] = std_max_oc_voltage
+                                build_data['Max OC V (Diff)'] = diff
+                                build_data['Max OC V (Status)'] = status
+                        
+                        # Activation Time comparison (lower is better, so pass if <= standard)
+                        if std_activation_time and 'Activation Time (min)' in metrics_df.columns:
+                            actual = metrics_df.loc[build_name, 'Activation Time (min)']
+                            if pd.notna(actual):
+                                diff = actual - std_activation_time
+                                status = '✅ Pass' if actual <= std_activation_time else '❌ Fail'
+                                build_data['Activation Time (Actual)'] = actual
+                                build_data['Activation Time (Std)'] = std_activation_time
+                                build_data['Activation Time (Diff)'] = diff
+                                build_data['Activation Time (Status)'] = status
+                        
+                        # Duration comparison (higher is better, so pass if >= standard)
+                        if std_duration and 'Duration (min)' in metrics_df.columns:
+                            actual = metrics_df.loc[build_name, 'Duration (min)']
+                            if pd.notna(actual):
+                                diff = actual - std_duration
+                                status = '✅ Pass' if actual >= std_duration else '❌ Fail'
+                                build_data['Duration (Actual)'] = actual
+                                build_data['Duration (Std)'] = std_duration
+                                build_data['Duration (Diff)'] = diff
+                                build_data['Duration (Status)'] = status
+                        
+                        standard_comparison_data.append(build_data)
+                    
+                    if standard_comparison_data:
+                        std_comp_df = pd.DataFrame(standard_comparison_data)
+                        
+                        # Format numeric columns
+                        format_dict = {}
+                        for col in std_comp_df.columns:
+                            if col not in ['Build'] and '(Status)' not in col:
+                                format_dict[col] = '{:.4f}'
+                        
+                        st.dataframe(std_comp_df.style.format(format_dict), use_container_width=True)
+                        
+                        # Overall pass/fail summary
+                        st.markdown("### 📊 Overall Performance Summary")
+                        for build_name in metrics_df.index:
+                            status_cols = [col for col in std_comp_df.columns if '(Status)' in col]
+                            build_row = std_comp_df[std_comp_df['Build'] == build_name].iloc[0]
+                            
+                            passes = sum(1 for col in status_cols if col in build_row and '✅' in str(build_row[col]))
+                            fails = sum(1 for col in status_cols if col in build_row and '❌' in str(build_row[col]))
+                            total_tests = passes + fails
+                            
+                            if total_tests > 0:
+                                pass_rate = (passes / total_tests) * 100
+                                if pass_rate == 100:
+                                    st.success(f"**{build_name}**: {passes}/{total_tests} tests passed ({pass_rate:.0f}%) ✅")
+                                elif pass_rate >= 50:
+                                    st.warning(f"**{build_name}**: {passes}/{total_tests} tests passed ({pass_rate:.0f}%)")
+                                else:
+                                    st.error(f"**{build_name}**: {passes}/{total_tests} tests passed ({pass_rate:.0f}%) ❌")
     
     with tab4:
         st.header("Advanced Analytics & Anomaly Detection")
@@ -1141,7 +1397,11 @@ if len(dataframes) == num_builds and num_builds > 0:
                 temp = extract_temperature_from_name(name)
             
             time_col, voltage_col, current_col, capacity_col = detect_columns(df)
-            metrics = calculate_metrics(df, time_col, voltage_col, current_col)
+            metrics = calculate_metrics(
+                df, time_col, voltage_col, current_col,
+                min_activation_voltage=min_activation_voltage,
+                end_discharge_voltage=end_discharge_voltage
+            )
             advanced = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
             
             battery_code = metadata.get('battery_code', '') if metadata else ''
