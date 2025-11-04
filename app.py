@@ -304,27 +304,46 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
         
         metrics['Total Time (min)'] = time_range_minutes
         
-        # Calculate activation time and duration (both represent time when voltage > min_activation_voltage)
-        # Activation Time: The time at which the min voltage for activation is achieved
-        # Duration: The total time when voltage is greater than min voltage for activation
-        # For discharge curves, voltage starts high and drops, so both are the same value
+        # Calculate activation time and duration
+        # Activation Time (Sec): The time when battery FIRST reaches >= min_activation_voltage
+        # Duration (Sec): The TOTAL cumulative time when voltage >= min_activation_voltage
         if voltage_col and voltage_col in df.columns:
-            activation_mask = df[voltage_col] <= min_activation_voltage
-            if activation_mask.any():
-                first_activation_idx = activation_mask.idxmax()
-                activation_time = time_series.iloc[first_activation_idx] - time_series.iloc[0]
+            # Create mask for when voltage is >= minimum activation voltage
+            above_threshold_mask = df[voltage_col] >= min_activation_voltage
+            
+            if above_threshold_mask.any():
+                # Find the FIRST time when voltage >= min_activation_voltage
+                first_activation_idx = above_threshold_mask.idxmax()
                 
-                if pd.api.types.is_timedelta64_dtype(activation_time):
-                    activation_time_minutes = activation_time.total_seconds() / 60
-                elif isinstance(activation_time, pd.Timedelta):
-                    activation_time_minutes = activation_time.total_seconds() / 60
+                # Get time series as seconds (not minutes)
+                if pd.api.types.is_timedelta64_dtype(time_series):
+                    time_in_seconds = time_series.dt.total_seconds()
+                elif isinstance(time_series.iloc[0], pd.Timedelta):
+                    time_in_seconds = time_series.apply(lambda x: x.total_seconds())
                 else:
-                    activation_time_minutes = float(activation_time)
+                    # Already in minutes from detect_time_unit_and_convert, convert to seconds
+                    time_in_seconds = time_series * 60
                 
-                metrics['Activation Time (min)'] = activation_time_minutes
-                # Duration is the same as activation time
-                metrics['Duration (min)'] = activation_time_minutes
+                # Activation Time: time at first occurrence
+                activation_time_sec = time_in_seconds.iloc[first_activation_idx] - time_in_seconds.iloc[0]
+                
+                # Duration: cumulative sum of time periods when voltage >= threshold
+                # Calculate time differences between consecutive points
+                time_diffs = time_in_seconds.diff().fillna(0)
+                
+                # Sum up time intervals where voltage >= threshold
+                duration_sec = time_diffs[above_threshold_mask].sum()
+                
+                metrics['Activation Time (Sec)'] = float(activation_time_sec)
+                metrics['Duration (Sec)'] = float(duration_sec)
+                
+                # Also keep minutes versions for backward compatibility
+                metrics['Activation Time (min)'] = float(activation_time_sec / 60)
+                metrics['Duration (min)'] = float(duration_sec / 60)
             else:
+                # Voltage never reaches the threshold
+                metrics['Activation Time (Sec)'] = None
+                metrics['Duration (Sec)'] = None
                 metrics['Activation Time (min)'] = None
                 metrics['Duration (min)'] = None
         
@@ -392,8 +411,8 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
     report.append("TEST CONFIGURATION")
     report.append("-" * 80)
     report.append(f"Min. Voltage for Activation: {min_activation_voltage} V")
-    report.append("Note: Activation Time (Sec) = Time at which min voltage is achieved")
-    report.append("      Duration (Sec) = Total time when voltage > min voltage (same as Activation Time)")
+    report.append("Note: Activation Time (Sec) = Time when battery FIRST reaches >= min voltage")
+    report.append("      Duration (Sec) = TOTAL cumulative time when voltage >= min voltage")
     report.append("")
     
     # Build Information
@@ -909,7 +928,7 @@ if data_mode == "Upload Files":
         max_value=100.0,
         value=1.0,
         step=0.1,
-        help="Minimum voltage threshold. Activation Time = time when this voltage is reached. Duration = total time when voltage > this threshold."
+        help="Minimum voltage threshold. Activation Time (Sec) = time when battery FIRST reaches ≥ this voltage. Duration (Sec) = TOTAL cumulative time when voltage ≥ this threshold."
     )
     
     st.sidebar.markdown("---")
