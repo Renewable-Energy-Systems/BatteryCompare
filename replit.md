@@ -14,8 +14,8 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 **New Performance Metrics**:
 - **Max On-Load Voltage**: Maximum voltage when current is flowing (≥0.01A)
 - **Max Open Circuit Voltage**: Maximum voltage when current is near zero (<0.01A)
-- **Activation Time**: Time taken for voltage to drop to specified minimum voltage threshold
-- **Duration**: Time taken for voltage to drop to specified end-of-discharge voltage threshold
+- **Activation Time (Sec)**: The time at which the minimum voltage for activation is achieved
+- **Duration (Sec)**: The total time when voltage is greater than the minimum voltage for activation (same as Activation Time)
 
 **Standard Performance Benchmarks**:
 - Optional comparison against target performance levels

@@ -236,7 +236,7 @@ def downsample_for_plotting(df, max_points=10000):
     
     return df.iloc[indices].copy()
 
-def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activation_voltage=1.0, end_discharge_voltage=0.9):
+def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activation_voltage=1.0):
     """Calculate key battery metrics including new performance metrics"""
     metrics = {}
     
@@ -304,8 +304,10 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
         
         metrics['Total Time (min)'] = time_range_minutes
         
-        # Calculate activation time (time to reach min_activation_voltage during discharge)
-        # For discharge curves, voltage starts high and drops, so we look for when it drops to the threshold
+        # Calculate activation time and duration (both represent time when voltage > min_activation_voltage)
+        # Activation Time: The time at which the min voltage for activation is achieved
+        # Duration: The total time when voltage is greater than min voltage for activation
+        # For discharge curves, voltage starts high and drops, so both are the same value
         if voltage_col and voltage_col in df.columns:
             activation_mask = df[voltage_col] <= min_activation_voltage
             if activation_mask.any():
@@ -320,24 +322,10 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                     activation_time_minutes = float(activation_time)
                 
                 metrics['Activation Time (min)'] = activation_time_minutes
+                # Duration is the same as activation time
+                metrics['Duration (min)'] = activation_time_minutes
             else:
                 metrics['Activation Time (min)'] = None
-            
-            # Calculate duration (time to reach end_discharge_voltage)
-            end_mask = df[voltage_col] <= end_discharge_voltage
-            if end_mask.any():
-                first_end_idx = end_mask.idxmax()
-                duration_time = time_series.iloc[first_end_idx] - time_series.iloc[0]
-                
-                if pd.api.types.is_timedelta64_dtype(duration_time):
-                    duration_minutes = duration_time.total_seconds() / 60
-                elif isinstance(duration_time, pd.Timedelta):
-                    duration_minutes = duration_time.total_seconds() / 60
-                else:
-                    duration_minutes = float(duration_time)
-                
-                metrics['Duration (min)'] = duration_minutes
-            else:
                 metrics['Duration (min)'] = None
         
         if voltage_col and voltage_col in df.columns and time_range_minutes > 0:
@@ -383,7 +371,7 @@ def export_to_csv(dataframes, build_names, metrics_df):
     return None
 
 def generate_detailed_report(metrics_df, build_names, metadata_list, 
-                             min_activation_voltage, end_discharge_voltage,
+                             min_activation_voltage,
                              use_standards=False, std_max_onload_voltage=None, 
                              std_max_oc_voltage=None, std_activation_time=None, 
                              std_duration=None, std_activation_time_ms=None,
@@ -404,7 +392,8 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
     report.append("TEST CONFIGURATION")
     report.append("-" * 80)
     report.append(f"Min. Voltage for Activation: {min_activation_voltage} V")
-    report.append(f"Voltage at End of Discharge: {end_discharge_voltage} V")
+    report.append("Note: Activation Time (Sec) = Time at which min voltage is achieved")
+    report.append("      Duration (Sec) = Total time when voltage > min voltage (same as Activation Time)")
     report.append("")
     
     # Build Information
@@ -900,7 +889,6 @@ metadata_list = []
 
 # Default performance specifications
 min_activation_voltage = 1.0
-end_discharge_voltage = 0.9
 use_standards = False
 std_max_onload_voltage = None
 std_max_oc_voltage = None
@@ -921,16 +909,7 @@ if data_mode == "Upload Files":
         max_value=100.0,
         value=1.0,
         step=0.1,
-        help="Minimum voltage threshold to calculate activation time"
-    )
-    
-    end_discharge_voltage = st.sidebar.number_input(
-        "Voltage at end of discharge (V):",
-        min_value=0.0,
-        max_value=100.0,
-        value=0.9,
-        step=0.1,
-        help="Voltage threshold to calculate discharge duration"
+        help="Minimum voltage threshold. Activation Time = time when this voltage is reached. Duration = total time when voltage > this threshold."
     )
     
     st.sidebar.markdown("---")
@@ -1143,8 +1122,7 @@ if len(dataframes) == num_builds and num_builds > 0:
                 
                 metrics = calculate_metrics(
                     df, time_col, voltage_col, current_col, 
-                    min_activation_voltage=min_activation_voltage,
-                    end_discharge_voltage=end_discharge_voltage
+                    min_activation_voltage=min_activation_voltage
                 )
                 metrics['Build'] = name
                 all_metrics.append(metrics)
@@ -1291,8 +1269,7 @@ if len(dataframes) == num_builds and num_builds > 0:
             time_col, voltage_col, current_col, capacity_col = detect_columns(df)
             metrics = calculate_metrics(
                 df, time_col, voltage_col, current_col,
-                min_activation_voltage=min_activation_voltage,
-                end_discharge_voltage=end_discharge_voltage
+                min_activation_voltage=min_activation_voltage
             )
             metrics['Build'] = name
             all_build_metrics.append(metrics)
@@ -1324,7 +1301,7 @@ if len(dataframes) == num_builds and num_builds > 0:
                 # Generate detailed text report
                 report_text = generate_detailed_report(
                     metrics_df, build_names, metadata_list,
-                    min_activation_voltage, end_discharge_voltage,
+                    min_activation_voltage,
                     use_standards, std_max_onload_voltage,
                     std_max_oc_voltage, std_activation_time, std_duration,
                     std_activation_time_ms, std_duration_sec
@@ -1346,7 +1323,16 @@ if len(dataframes) == num_builds and num_builds > 0:
                             else:
                                 st.error(msg)
             
-            st.dataframe(metrics_df.style.format("{:.4f}"), use_container_width=True)
+            # Format metrics dataframe, handling None/NaN values gracefully
+            def format_value(val):
+                if pd.isna(val) or val is None:
+                    return "N/A"
+                elif isinstance(val, (int, float)):
+                    return f"{val:.4f}"
+                else:
+                    return str(val)
+            
+            st.dataframe(metrics_df.map(format_value), use_container_width=True)
             
             st.subheader("Statistical Summary")
             
@@ -1614,8 +1600,7 @@ if len(dataframes) == num_builds and num_builds > 0:
             time_col, voltage_col, current_col, capacity_col = detect_columns(df)
             metrics = calculate_metrics(
                 df, time_col, voltage_col, current_col,
-                min_activation_voltage=min_activation_voltage,
-                end_discharge_voltage=end_discharge_voltage
+                min_activation_voltage=min_activation_voltage
             )
             advanced = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
             
