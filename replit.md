@@ -14,8 +14,8 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 **New Performance Metrics**:
 - **Max On-Load Voltage**: Maximum voltage when current is flowing (≥0.01A)
 - **Max Open Circuit Voltage**: Maximum voltage when current is near zero (<0.01A)
-- **Activation Time (Sec)**: The time at which the minimum voltage for activation is achieved
-- **Duration (Sec)**: The total time when voltage is greater than the minimum voltage for activation (same as Activation Time)
+- **Activation Time (Sec)**: The time when battery FIRST reaches ≥ minimum voltage for activation
+- **Duration (Sec)**: The TOTAL cumulative time when voltage ≥ minimum voltage for activation (sum of all time periods above threshold, NOT continuous)
 
 **Standard Performance Benchmarks**:
 - Optional comparison against target performance levels
