@@ -601,7 +601,7 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         'CustomTitle',
         parent=styles['Heading1'],
         fontSize=16,
-        textColor=colors.HexColor('#1f77b4'),
+        textColor=rl_colors.HexColor('#1f77b4'),
         spaceAfter=12,
         alignment=TA_CENTER
     )
@@ -609,7 +609,7 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         'CustomHeading',
         parent=styles['Heading2'],
         fontSize=12,
-        textColor=colors.HexColor('#2ca02c'),
+        textColor=rl_colors.HexColor('#2ca02c'),
         spaceAfter=6,
         spaceBefore=12
     )
@@ -627,12 +627,12 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
     ]
     info_table = Table(info_data, colWidths=[2*inch, 4*inch])
     info_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('BACKGROUND', (0, 0), (0, -1), rl_colors.lightgrey),
+        ('TEXTCOLOR', (0, 0), (-1, -1), rl_colors.black),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
     ]))
     story.append(info_table)
@@ -650,14 +650,14 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
     
     build_table = Table(build_data, colWidths=[2*inch, 1.5*inch, 1.2*inch, 1.3*inch])
     build_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2ca02c')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#2ca02c')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 10),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BACKGROUND', (0, 1), (-1, -1), rl_colors.beige),
+        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
     ]))
     story.append(build_table)
     story.append(Spacer(1, 0.3*inch))
@@ -684,14 +684,14 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         col_widths = [2*inch] + [1.5*inch] * (len(metrics_data[0]) - 1)
         metrics_table = Table(metrics_data, colWidths=col_widths)
         metrics_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1f77b4')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 9),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightblue),
+            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
         ]))
         story.append(metrics_table)
         story.append(Spacer(1, 0.3*inch))
@@ -712,14 +712,14 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         
         std_table = Table(std_data, colWidths=[3*inch, 3*inch])
         std_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ff7f0e')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#ff7f0e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.lightyellow),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightyellow),
+            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
         ]))
         story.append(std_table)
         story.append(Spacer(1, 0.2*inch))
@@ -782,26 +782,26 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             
             comp_table = Table(comp_data, colWidths=[1.8*inch, 1.2*inch, 1.2*inch, 1.2*inch, 0.8*inch])
             comp_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightgrey),
             ]))
             
             for i in range(1, len(comp_data)):
                 status = comp_data[i][-1]
                 if status == 'PASS':
                     comp_table.setStyle(TableStyle([
-                        ('BACKGROUND', (-1, i), (-1, i), colors.lightgreen),
-                        ('TEXTCOLOR', (-1, i), (-1, i), colors.darkgreen),
+                        ('BACKGROUND', (-1, i), (-1, i), rl_colors.lightgreen),
+                        ('TEXTCOLOR', (-1, i), (-1, i), rl_colors.darkgreen),
                     ]))
                 elif status == 'FAIL':
                     comp_table.setStyle(TableStyle([
-                        ('BACKGROUND', (-1, i), (-1, i), colors.lightcoral),
-                        ('TEXTCOLOR', (-1, i), (-1, i), colors.darkred),
+                        ('BACKGROUND', (-1, i), (-1, i), rl_colors.lightcoral),
+                        ('TEXTCOLOR', (-1, i), (-1, i), rl_colors.darkred),
                     ]))
             
             story.append(comp_table)
