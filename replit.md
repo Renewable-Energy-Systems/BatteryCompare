@@ -32,7 +32,8 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 - Includes: test configuration, build information, performance metrics, statistical summary
 - Standard benchmark comparisons with pass/fail status
 - Build-to-build comparisons with differences and percentage changes
-- Downloadable in multiple formats: Excel, CSV, and formatted text report
+- Downloadable in multiple formats: Excel, CSV, formatted text report, and **PDF**
+- **PDF Reports**: Professional formatted reports with tables, color-coded pass/fail status, build information, and performance comparisons
 
 ## Current Use Case
 
