@@ -2,9 +2,14 @@
 
 ## Overview
 
-This is a Streamlit-based web application for analyzing and comparing **primary (non-rechargeable) battery** discharge data across different temperature conditions. The application is optimized for high-frequency discharge data (e.g., 10ms sampling intervals) from battery testing equipment. Users can upload **unlimited** discharge datasets (CSV/Excel), visualize discharge curves, compare performance metrics against each other and standard benchmarks, and save comparisons for future reference. It provides interactive visualizations using Plotly and statistical analysis capabilities using SciPy.
+This is a Streamlit-based web application for analyzing and comparing **primary (non-rechargeable) battery** discharge data across different temperature conditions. The application supports battery type organization, allowing users to select and track different battery chemistries separately (Madhava, low-voltage, high-voltage, or custom types). The application is optimized for high-frequency discharge data (e.g., 10ms sampling intervals) from battery testing equipment. Users can upload **unlimited** discharge datasets (CSV/Excel), visualize discharge curves, compare performance metrics against each other and standard benchmarks, and save comparisons for future reference. It provides interactive visualizations using Plotly and statistical analysis capabilities using SciPy.
 
 ## Recent Updates (Nov 2025)
+
+**Battery Type Organization** (Nov 2025):
+- Battery type selector at app start (General, Madhava, Low-Voltage, High-Voltage, Custom)
+- All analysis and data organized by selected battery type
+- Session state management for battery type persistence
 
 **Unlimited Build Support**:
 - Removed 3-build limitation - now supports 1-50 builds per comparison
