@@ -385,53 +385,55 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
             metrics['Total Energy (Wh)'] = float(energy)
     
     # Calculate extended performance metrics if metadata is provided
-    if extended_metadata and current_col and current_col in df.columns and time_col and time_col in df.columns and 'time_series' in locals():
-        # Reuse the already-converted time_series from above
-        # Handle both Timedelta and numeric (minutes) cases
-        if pd.api.types.is_timedelta64_dtype(time_series):
-            # time_series is Timedelta, convert directly to seconds
-            time_in_seconds = time_series.dt.total_seconds()
-        elif isinstance(time_series.iloc[0] if len(time_series) > 0 else None, pd.Timedelta):
-            # Individual Timedelta objects
-            time_in_seconds = time_series.apply(lambda x: x.total_seconds())
-        else:
-            # time_series is numeric in minutes, convert to seconds
-            time_in_seconds = time_series * 60
-        
-        if len(df) > 1:
-            time_diff_seconds = pd.Series(time_in_seconds).diff().fillna(0)
-            current_abs = df[current_col].abs()
-            
-            # Total ampere-seconds = sum of (current * time_diff)
-            total_ampere_seconds = (current_abs * time_diff_seconds).sum()
-            metrics['Total Ampere-Seconds (A·s)'] = float(total_ampere_seconds)
-            
-            # Calculate per-gram metrics if weights are provided
-            total_anode_weight = extended_metadata.get('total_anode_weight', 0)
-            total_cathode_weight = extended_metadata.get('total_cathode_weight', 0)
-            total_stack_weight = extended_metadata.get('total_stack_weight', 0)
-            
-            # Ampere-seconds per gram of anode
-            if total_anode_weight > 0:
-                metrics['A·s per gram Anode'] = float(total_ampere_seconds / total_anode_weight)
+    if extended_metadata and current_col and current_col in df.columns and time_col and time_col in df.columns:
+        # Check if time_series was successfully created and converted earlier
+        if 'time_series' in locals() and time_series is not None:
+            # Reuse the already-converted time_series from above
+            # Handle both Timedelta and numeric (minutes) cases
+            if pd.api.types.is_timedelta64_dtype(time_series):
+                # time_series is Timedelta, convert directly to seconds
+                time_in_seconds = time_series.dt.total_seconds()
+            elif isinstance(time_series.iloc[0] if len(time_series) > 0 else None, pd.Timedelta):
+                # Individual Timedelta objects
+                time_in_seconds = time_series.apply(lambda x: x.total_seconds())
             else:
-                metrics['A·s per gram Anode'] = None
+                # time_series is numeric in minutes, convert to seconds
+                time_in_seconds = time_series * 60
             
-            # Ampere-seconds per gram of cathode
-            if total_cathode_weight > 0:
-                metrics['A·s per gram Cathode'] = float(total_ampere_seconds / total_cathode_weight)
-            else:
-                metrics['A·s per gram Cathode'] = None
-            
-            # Calorific value per gram of total stack weight
-            calorific_value_per_gram = extended_metadata.get('calorific_value_per_gram', 0)
-            if calorific_value_per_gram > 0 and total_stack_weight > 0:
-                # This is already a per-gram value, but we include it in metrics for completeness
-                metrics['Calorific Value per gram Stack (kJ/g)'] = float(calorific_value_per_gram)
-                metrics['Total Stack Weight (g)'] = float(total_stack_weight)
-            else:
-                metrics['Calorific Value per gram Stack (kJ/g)'] = None
-                metrics['Total Stack Weight (g)'] = float(total_stack_weight) if total_stack_weight > 0 else None
+            if len(df) > 1:
+                time_diff_seconds = pd.Series(time_in_seconds).diff().fillna(0)
+                current_abs = df[current_col].abs()
+                
+                # Total ampere-seconds = sum of (current * time_diff)
+                total_ampere_seconds = (current_abs * time_diff_seconds).sum()
+                metrics['Total Ampere-Seconds (A·s)'] = float(total_ampere_seconds)
+                
+                # Calculate per-gram metrics if weights are provided
+                total_anode_weight = extended_metadata.get('total_anode_weight', 0)
+                total_cathode_weight = extended_metadata.get('total_cathode_weight', 0)
+                total_stack_weight = extended_metadata.get('total_stack_weight', 0)
+                
+                # Ampere-seconds per gram of anode
+                if total_anode_weight > 0:
+                    metrics['A·s per gram Anode'] = float(total_ampere_seconds / total_anode_weight)
+                else:
+                    metrics['A·s per gram Anode'] = None
+                
+                # Ampere-seconds per gram of cathode
+                if total_cathode_weight > 0:
+                    metrics['A·s per gram Cathode'] = float(total_ampere_seconds / total_cathode_weight)
+                else:
+                    metrics['A·s per gram Cathode'] = None
+                
+                # Calorific value per gram of total stack weight
+                calorific_value_per_gram = extended_metadata.get('calorific_value_per_gram', 0)
+                if calorific_value_per_gram > 0 and total_stack_weight > 0:
+                    # This is already a per-gram value, but we include it in metrics for completeness
+                    metrics['Calorific Value per gram Stack (kJ/g)'] = float(calorific_value_per_gram)
+                    metrics['Total Stack Weight (g)'] = float(total_stack_weight)
+                else:
+                    metrics['Calorific Value per gram Stack (kJ/g)'] = None
+                    metrics['Total Stack Weight (g)'] = float(total_stack_weight) if total_stack_weight > 0 else None
     
     return metrics
 
@@ -1688,14 +1690,17 @@ if len(dataframes) == num_builds and num_builds > 0:
         build_info_data = []
         for idx, (name, metadata) in enumerate(zip(build_names, metadata_list)):
             info = {
-                'Build Name': name,
-                'Battery Code': metadata.get('battery_code', 'N/A') if metadata else 'N/A',
-                'Temperature': metadata.get('temperature', 'N/A') if metadata else 'N/A',
-                'Build ID': metadata.get('build_id', 'N/A') if metadata else 'N/A'
+                'Build Name': str(name),
+                'Battery Code': str(metadata.get('battery_code', 'N/A')) if metadata else 'N/A',
+                'Temperature': str(metadata.get('temperature', 'N/A')) if metadata else 'N/A',
+                'Build ID': str(metadata.get('build_id', 'N/A')) if metadata else 'N/A'
             }
             build_info_data.append(info)
         
         build_info_df = pd.DataFrame(build_info_data)
+        # Ensure all columns are string type to avoid pyarrow serialization errors
+        for col in build_info_df.columns:
+            build_info_df[col] = build_info_df[col].astype(str)
         st.dataframe(build_info_df, use_container_width=True, hide_index=True)
         st.markdown("---")
     
@@ -2129,11 +2134,15 @@ if len(dataframes) == num_builds and num_builds > 0:
                 if analytics:
                     analytics_df = pd.DataFrame([analytics]).T
                     analytics_df.columns = ['Value']
+                    # Convert Value column to string to avoid pyarrow serialization errors with mixed types
+                    analytics_df['Value'] = analytics_df['Value'].astype(str)
                     
                     def format_value(val):
-                        if isinstance(val, (int, float, np.number)):
-                            return f"{val:.4f}"
-                        else:
+                        # Format numeric string representations
+                        try:
+                            num_val = float(val)
+                            return f"{num_val:.4f}"
+                        except (ValueError, TypeError):
                             return str(val)
                     
                     st.dataframe(analytics_df.style.format(format_value), use_container_width=True)

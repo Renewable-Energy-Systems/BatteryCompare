@@ -6,6 +6,32 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 
 ## Recent Updates (Nov 2025)
 
+**Extended Build Metadata & Advanced Metrics** (Nov 7, 2025):
+- **Extended Build Information Form**: 7 new input fields per build for detailed battery construction data
+  - Weight inputs: Anode weight per cell, Cathode weight per cell, Heat pellet weight per cell, Electrolyte weight per cell
+  - Configuration: Cells in series, Stacks in parallel
+  - Energy: Calorific value per gram stack (kJ/g)
+- **Automatic Weight Calculations**: Total weights calculated from per-cell values and cell configuration
+  - Total Anode Weight = anode_weight_per_cell × cells_in_series
+  - Total Cathode Weight = cathode_weight_per_cell × cells_in_series
+  - Total Stack Weight = sum of all components × cells_in_series
+- **Advanced Performance Metrics**:
+  - **Total Ampere-Seconds (A·s)**: Charge capacity calculated as integral of current over time
+  - **A·s per gram Anode**: Energy efficiency metric normalized by anode mass
+  - **A·s per gram Cathode**: Energy efficiency metric normalized by cathode mass
+  - **Calorific Value per gram Stack**: Energy density of the complete battery stack
+- **Discharge Curve Analysis**:
+  - **ΔV/ΔT at 5-second intervals**: Voltage rate of change analysis for curve characterization
+  - **Curve Stability Assessment**: Statistical analysis of discharge slope variability
+  - **Slope Commentary**: Automated interpretation of discharge behavior (stable, gradual degradation, rapid drop)
+- **Correlation Analysis**: Statistical relationships between performance metrics
+  - Ampere-seconds per gram (anode) vs discharge slope
+  - Ampere-seconds per gram (cathode) vs discharge slope
+  - Calorific value vs curve stability metrics
+- **Database Schema Updates**:
+  - Added `battery_type` column to SavedComparison table for filtering saved analyses by battery chemistry
+  - Added `extended_metadata_json` column for persisting build construction details
+
 **Battery Type Organization** (Nov 2025):
 - Battery type selector at app start (General, Madhava, Low-Voltage, High-Voltage, Custom)
 - All analysis and data organized by selected battery type
@@ -16,7 +42,7 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 - Dynamic visualization adapts to number of builds (columns for ≤4, table view for >4)
 - Enhanced file processing with automatic cleanup of empty columns/rows
 
-**New Performance Metrics**:
+**Core Performance Metrics**:
 - **Max On-Load Voltage**: Maximum voltage when current is flowing (≥0.01A)
 - **Max Open Circuit Voltage**: Maximum voltage when current is near zero (<0.01A)
 - **Activation Time (Sec)**: The time when battery FIRST reaches ≥ minimum voltage for activation
@@ -100,12 +126,15 @@ SavedComparison:
 - build_names (Text field - serialized build identifiers)
 - data_json (Text field - serialized discharge data)
 - metrics_json (Text field - serialized performance metrics)
+- battery_type (VARCHAR(50) - Battery chemistry type: General, Madhava, Low-Voltage, High-Voltage, Custom)
+- extended_metadata_json (Text field - JSON serialized extended build metadata: weights, configuration, calorific value)
 ```
 
 **Design Decision**: JSON serialization in text columns
 - **Rationale**: Provides flexibility for varying data structures across different comparison types without rigid schema constraints
 - **Trade-off**: Sacrifices query performance on nested data for schema flexibility
 - **Alternative considered**: Normalized relational schema with separate tables for builds and metrics (rejected due to complexity for read-heavy use case)
+- **Extended Metadata Structure**: Stored as JSON to accommodate variable number of builds and optional fields per build
 
 ### Authentication & Authorization
 
