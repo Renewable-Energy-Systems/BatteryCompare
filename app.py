@@ -1006,6 +1006,11 @@ def calculate_advanced_analytics(df, time_col, voltage_col, current_col=None):
         # Create 5-second interval bins
         interval_seconds = 5
         max_time_sec = time_in_seconds[-1]
+        
+        # Check if max_time_sec is valid (not NaN or infinite)
+        if not np.isfinite(max_time_sec) or max_time_sec <= 0:
+            return analytics
+        
         num_intervals = int(max_time_sec / interval_seconds)
         
         if num_intervals > 1:
