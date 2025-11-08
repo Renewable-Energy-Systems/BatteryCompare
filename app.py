@@ -652,8 +652,11 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                         use_standards=False, std_max_onload_voltage=None, 
                         std_max_oc_voltage=None, std_activation_time=None, 
                         std_duration=None, std_activation_time_ms=None,
-                        std_duration_sec=None):
-    """Generate a comprehensive PDF report with all metrics and comparisons"""
+                        std_duration_sec=None,
+                        extended_metadata_list=None,
+                        analytics_list=None,
+                        correlations=None):
+    """Generate a comprehensive PDF report with all metrics, analytics, and correlations"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
     story = []
@@ -876,6 +879,168 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                 story.append(Paragraph(summary, styles['Normal']))
             
             story.append(Spacer(1, 0.2*inch))
+    
+    # Extended Build Metadata Section
+    if extended_metadata_list and any(meta for meta in extended_metadata_list):
+        story.append(PageBreak())
+        story.append(Paragraph("Extended Build Metadata", heading_style))
+        story.append(Spacer(1, 0.1*inch))
+        
+        for idx, (build_name, ext_meta) in enumerate(zip(build_names, extended_metadata_list)):
+            if ext_meta and any(ext_meta.values()):
+                story.append(Paragraph(f"<b>{build_name}</b>", styles['Normal']))
+                story.append(Spacer(1, 0.05*inch))
+                
+                ext_data = []
+                if ext_meta.get('anode_weight_per_cell'):
+                    ext_data.append(['Anode Weight per Cell', f"{ext_meta['anode_weight_per_cell']:.2f} g"])
+                if ext_meta.get('cathode_weight_per_cell'):
+                    ext_data.append(['Cathode Weight per Cell', f"{ext_meta['cathode_weight_per_cell']:.2f} g"])
+                if ext_meta.get('heat_pellet_weight_per_cell'):
+                    ext_data.append(['Heat Pellet Weight per Cell', f"{ext_meta['heat_pellet_weight_per_cell']:.2f} g"])
+                if ext_meta.get('electrolyte_weight_per_cell'):
+                    ext_data.append(['Electrolyte Weight per Cell', f"{ext_meta['electrolyte_weight_per_cell']:.2f} g"])
+                if ext_meta.get('cells_in_series'):
+                    ext_data.append(['Cells in Series', f"{ext_meta['cells_in_series']}"])
+                if ext_meta.get('stacks_in_parallel'):
+                    ext_data.append(['Stacks in Parallel', f"{ext_meta['stacks_in_parallel']}"])
+                if ext_meta.get('total_anode_weight'):
+                    ext_data.append(['Total Anode Weight', f"{ext_meta['total_anode_weight']:.2f} g"])
+                if ext_meta.get('total_cathode_weight'):
+                    ext_data.append(['Total Cathode Weight', f"{ext_meta['total_cathode_weight']:.2f} g"])
+                if ext_meta.get('total_stack_weight'):
+                    ext_data.append(['Total Stack Weight', f"{ext_meta['total_stack_weight']:.2f} g"])
+                if ext_meta.get('calorific_value_per_g'):
+                    ext_data.append(['Calorific Value per gram Stack', f"{ext_meta['calorific_value_per_g']:.2f} kJ/g"])
+                
+                if ext_data:
+                    ext_table = Table(ext_data, colWidths=[3*inch, 2*inch])
+                    ext_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (0, -1), rl_colors.lightgrey),
+                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 9),
+                        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ]))
+                    story.append(ext_table)
+                    story.append(Spacer(1, 0.15*inch))
+    
+    # Advanced Performance Metrics Section
+    if metrics_df is not None and not metrics_df.empty:
+        advanced_metrics = ['Total Ampere-Seconds (A·s)', 'A·s per gram Anode', 
+                          'A·s per gram Cathode', 'Calorific Value per gram Stack (kJ/g)']
+        
+        if any(m in metrics_df.columns for m in advanced_metrics):
+            story.append(PageBreak())
+            story.append(Paragraph("Advanced Performance Metrics", heading_style))
+            story.append(Spacer(1, 0.1*inch))
+            
+            adv_data = [['Build'] + [m for m in advanced_metrics if m in metrics_df.columns]]
+            
+            for build_name in metrics_df.index:
+                row = [build_name]
+                for metric in advanced_metrics:
+                    if metric in metrics_df.columns:
+                        value = metrics_df.loc[build_name, metric]
+                        if pd.notna(value):
+                            row.append(f"{value:.4f}")
+                        else:
+                            row.append("N/A")
+                adv_data.append(row)
+            
+            col_widths = [1.5*inch] + [1.3*inch] * (len(adv_data[0]) - 1)
+            adv_table = Table(adv_data, colWidths=col_widths)
+            adv_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#9467bd')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lavender),
+                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+            ]))
+            story.append(adv_table)
+            story.append(Spacer(1, 0.2*inch))
+    
+    # Discharge Curve Analysis Section
+    if analytics_list and any(analytics for analytics in analytics_list):
+        story.append(PageBreak())
+        story.append(Paragraph("Discharge Curve Analysis", heading_style))
+        story.append(Spacer(1, 0.1*inch))
+        
+        for idx, (build_name, analytics) in enumerate(zip(build_names, analytics_list)):
+            if analytics:
+                story.append(Paragraph(f"<b>{build_name}</b>", styles['Normal']))
+                story.append(Spacer(1, 0.05*inch))
+                
+                curve_data = []
+                if analytics.get('ΔV/ΔT Mean (V/s)') is not None:
+                    curve_data.append(['Mean ΔV/ΔT', f"{analytics['ΔV/ΔT Mean (V/s)']:.6f} V/s"])
+                if analytics.get('ΔV/ΔT Std Dev (V/s)') is not None:
+                    curve_data.append(['Std Dev ΔV/ΔT', f"{analytics['ΔV/ΔT Std Dev (V/s)']:.6f} V/s"])
+                if analytics.get('ΔV/ΔT Max (V/s)') is not None:
+                    curve_data.append(['Max |ΔV/ΔT|', f"{analytics['ΔV/ΔT Max (V/s)']:.6f} V/s"])
+                if analytics.get('Discharge Slope Variability (%)') is not None:
+                    curve_data.append(['Slope Variability', f"{analytics['Discharge Slope Variability (%)']:.2f} %"])
+                if analytics.get('Curve Stability Assessment'):
+                    curve_data.append(['Stability Assessment', str(analytics['Curve Stability Assessment'])])
+                
+                if curve_data:
+                    curve_table = Table(curve_data, colWidths=[2.5*inch, 3.5*inch])
+                    curve_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (0, -1), rl_colors.lightgrey),
+                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 9),
+                        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ]))
+                    story.append(curve_table)
+                    story.append(Spacer(1, 0.15*inch))
+    
+    # Correlation Analysis Section
+    if correlations and len(correlations) > 0:
+        story.append(PageBreak())
+        story.append(Paragraph("Correlation Analysis", heading_style))
+        story.append(Spacer(1, 0.1*inch))
+        
+        corr_data = [['Relationship', 'Correlation', 'P-Value', 'Strength', 'Significance']]
+        
+        for corr_name, corr_info in correlations.items():
+            corr_data.append([
+                corr_name,
+                f"{corr_info['correlation']:.3f}",
+                f"{corr_info['p_value']:.4f}",
+                f"{corr_info['strength']} ({corr_info['direction']})",
+                corr_info['significance']
+            ])
+        
+        corr_table = Table(corr_data, colWidths=[2*inch, 0.9*inch, 0.9*inch, 1.2*inch, 1.2*inch])
+        corr_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#d62728')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightpink),
+            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+        ]))
+        story.append(corr_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        story.append(Paragraph("<b>Interpretation Guide:</b>", styles['Normal']))
+        story.append(Spacer(1, 0.05*inch))
+        interp_text = """
+        • Correlation coefficient ranges from -1 to +1<br/>
+        • Strong correlation: |r| > 0.7, Moderate: 0.4 < |r| ≤ 0.7, Weak: |r| ≤ 0.4<br/>
+        • Positive: variables increase together; Negative: one increases as other decreases<br/>
+        • Significant (p<0.05): relationship is statistically reliable
+        """
+        story.append(Paragraph(interp_text, styles['Normal']))
+        story.append(Spacer(1, 0.2*inch))
     
     doc.build(story)
     buffer.seek(0)
@@ -1947,13 +2112,36 @@ if len(dataframes) == num_builds and num_builds > 0:
                     mime="text/plain"
                 )
             with col5:
+                # Prepare analytics and extended metadata for PDF
+                analytics_list_for_pdf = []
+                extended_metadata_list_for_pdf = []
+                
+                for idx, (df, name) in enumerate(zip(dataframes, build_names)):
+                    time_col, voltage_col, current_col, capacity_col = detect_columns(df)
+                    
+                    # Get analytics for this build
+                    analytics = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
+                    analytics_list_for_pdf.append(analytics)
+                    
+                    # Get extended metadata for this build
+                    ext_meta = st.session_state.get('build_metadata_extended', {}).get(idx, {})
+                    extended_metadata_list_for_pdf.append(ext_meta)
+                
+                # Calculate correlations if we have enough data
+                correlations_for_pdf = None
+                if len(all_build_metrics) >= 2:
+                    correlations_for_pdf = calculate_correlation_analysis(all_build_metrics, analytics_list_for_pdf)
+                
                 # Generate PDF report
                 pdf_data = generate_pdf_report(
                     metrics_df, build_names, metadata_list,
                     min_activation_voltage,
                     use_standards, std_max_onload_voltage,
                     std_max_oc_voltage, std_activation_time, std_duration,
-                    std_activation_time_ms, std_duration_sec
+                    std_activation_time_ms, std_duration_sec,
+                    extended_metadata_list_for_pdf,
+                    analytics_list_for_pdf,
+                    correlations_for_pdf
                 )
                 st.download_button(
                     label="📕 PDF",
