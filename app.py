@@ -32,6 +32,8 @@ class SavedComparison(Base):
     build_names = Column(Text)
     data_json = Column(Text)
     metrics_json = Column(Text)
+    battery_type = Column(String(100), nullable=True)  # New: battery type (General, Madhava, etc.)
+    extended_metadata_json = Column(Text, nullable=True)  # New: extended build metadata (weights, calorific value, etc.)
 
 if DATABASE_URL:
     engine = create_engine(DATABASE_URL)
@@ -242,8 +244,17 @@ def downsample_for_plotting(df, max_points=10000):
     
     return df.iloc[indices].copy()
 
-def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activation_voltage=1.0):
-    """Calculate key battery metrics including new performance metrics"""
+def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activation_voltage=1.0, extended_metadata=None):
+    """Calculate key battery metrics including new performance metrics
+    
+    Args:
+        df: DataFrame with battery discharge data
+        time_col: Name of time column
+        voltage_col: Name of voltage column
+        current_col: Name of current column
+        min_activation_voltage: Minimum voltage threshold for activation
+        extended_metadata: Dict with extended build metadata (weights, calorific value, etc.)
+    """
     metrics = {}
     
     if voltage_col and voltage_col in df.columns:
@@ -372,6 +383,57 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
             
             energy = (power * time_diff_minutes).sum() / 60
             metrics['Total Energy (Wh)'] = float(energy)
+    
+    # Calculate extended performance metrics if metadata is provided
+    if extended_metadata and current_col and current_col in df.columns and time_col and time_col in df.columns:
+        # Check if time_series was successfully created and converted earlier
+        if 'time_series' in locals() and time_series is not None:
+            # Reuse the already-converted time_series from above
+            # Handle both Timedelta and numeric (minutes) cases
+            if pd.api.types.is_timedelta64_dtype(time_series):
+                # time_series is Timedelta, convert directly to seconds
+                time_in_seconds = time_series.dt.total_seconds()
+            elif isinstance(time_series.iloc[0] if len(time_series) > 0 else None, pd.Timedelta):
+                # Individual Timedelta objects
+                time_in_seconds = time_series.apply(lambda x: x.total_seconds())
+            else:
+                # time_series is numeric in minutes, convert to seconds
+                time_in_seconds = time_series * 60
+            
+            if len(df) > 1:
+                time_diff_seconds = pd.Series(time_in_seconds).diff().fillna(0)
+                current_abs = df[current_col].abs()
+                
+                # Total ampere-seconds = sum of (current * time_diff)
+                total_ampere_seconds = (current_abs * time_diff_seconds).sum()
+                metrics['Total Ampere-Seconds (A·s)'] = float(total_ampere_seconds)
+                
+                # Calculate per-gram metrics if weights are provided
+                total_anode_weight = extended_metadata.get('total_anode_weight', 0)
+                total_cathode_weight = extended_metadata.get('total_cathode_weight', 0)
+                total_stack_weight = extended_metadata.get('total_stack_weight', 0)
+                
+                # Ampere-seconds per gram of anode
+                if total_anode_weight > 0:
+                    metrics['A·s per gram Anode'] = float(total_ampere_seconds / total_anode_weight)
+                else:
+                    metrics['A·s per gram Anode'] = None
+                
+                # Ampere-seconds per gram of cathode
+                if total_cathode_weight > 0:
+                    metrics['A·s per gram Cathode'] = float(total_ampere_seconds / total_cathode_weight)
+                else:
+                    metrics['A·s per gram Cathode'] = None
+                
+                # Calorific value per gram of total stack weight
+                calorific_value_per_gram = extended_metadata.get('calorific_value_per_gram', 0)
+                if calorific_value_per_gram > 0 and total_stack_weight > 0:
+                    # This is already a per-gram value, but we include it in metrics for completeness
+                    metrics['Calorific Value per gram Stack (kJ/g)'] = float(calorific_value_per_gram)
+                    metrics['Total Stack Weight (g)'] = float(total_stack_weight)
+                else:
+                    metrics['Calorific Value per gram Stack (kJ/g)'] = None
+                    metrics['Total Stack Weight (g)'] = float(total_stack_weight) if total_stack_weight > 0 else None
     
     return metrics
 
@@ -936,8 +998,185 @@ def calculate_advanced_analytics(df, time_col, voltage_col, current_col=None):
                 valid_current = current_series[:-1][valid_indices]
                 coulombic_efficiency = np.sum(np.abs(valid_current) * valid_time_diffs) / 60
                 analytics['Coulombic Efficiency (Ah)'] = coulombic_efficiency
+        
+        # Advanced discharge curve analysis: ΔV/ΔT at 5-second intervals
+        # Convert time to seconds for 5-second interval analysis
+        time_in_seconds = time_series * 60  # Convert from minutes to seconds
+        
+        # Create 5-second interval bins
+        interval_seconds = 5
+        max_time_sec = time_in_seconds[-1]
+        
+        # Check if max_time_sec is valid (not NaN or infinite)
+        if not np.isfinite(max_time_sec) or max_time_sec <= 0:
+            return analytics
+        
+        num_intervals = int(max_time_sec / interval_seconds)
+        
+        if num_intervals > 1:
+            delta_v_delta_t_values = []
+            interval_times = []
+            
+            for i in range(num_intervals):
+                start_time = i * interval_seconds
+                end_time = (i + 1) * interval_seconds
+                
+                # Find indices in this time interval
+                mask = (time_in_seconds >= start_time) & (time_in_seconds < end_time)
+                
+                if np.sum(mask) >= 2:
+                    time_subset = time_in_seconds[mask]
+                    voltage_subset = voltage_series[mask]
+                    
+                    # Calculate ΔV/ΔT for this interval (in V/s)
+                    delta_v = voltage_subset[-1] - voltage_subset[0]
+                    delta_t = time_subset[-1] - time_subset[0]
+                    
+                    if delta_t > 0:
+                        slope = delta_v / delta_t
+                        delta_v_delta_t_values.append(slope)
+                        interval_times.append((start_time + end_time) / 2)
+            
+            if len(delta_v_delta_t_values) > 0:
+                # Store the slopes array for further analysis
+                analytics['ΔV/ΔT Values (V/s)'] = delta_v_delta_t_values
+                analytics['ΔV/ΔT Mean (V/s)'] = float(np.mean(delta_v_delta_t_values))
+                analytics['ΔV/ΔT Std Dev (V/s)'] = float(np.std(delta_v_delta_t_values))
+                analytics['ΔV/ΔT Max (V/s)'] = float(np.max(np.abs(delta_v_delta_t_values)))
+                analytics['ΔV/ΔT Min (V/s)'] = float(np.min(np.abs(delta_v_delta_t_values)))
+                
+                # Curve stability analysis
+                # Calculate coefficient of variation (CV) to assess stability
+                mean_slope = np.mean(np.abs(delta_v_delta_t_values))
+                std_slope = np.std(delta_v_delta_t_values)
+                
+                if mean_slope > 0:
+                    cv = (std_slope / mean_slope) * 100
+                    analytics['Discharge Slope Variability (%)'] = float(cv)
+                    
+                    # Generate stability commentary
+                    if cv < 10:
+                        stability_commentary = "Excellent - Very stable discharge curve with minimal variation"
+                    elif cv < 25:
+                        stability_commentary = "Good - Stable discharge curve with acceptable variation"
+                    elif cv < 50:
+                        stability_commentary = "Moderate - Some variability in discharge rate"
+                    elif cv < 100:
+                        stability_commentary = "Poor - Significant variability in discharge rate"
+                    else:
+                        stability_commentary = "Very Poor - Highly unstable discharge curve"
+                    
+                    analytics['Curve Stability Assessment'] = stability_commentary
+                
+                # Check for sudden changes (anomalies in slope)
+                slope_changes = np.diff(delta_v_delta_t_values)
+                if len(slope_changes) > 0:
+                    max_slope_change = np.max(np.abs(slope_changes))
+                    analytics['Max Slope Change (V/s²)'] = float(max_slope_change)
+                    
+                    # Detect if there are abrupt changes
+                    threshold = 3 * np.std(slope_changes)
+                    abrupt_changes = np.sum(np.abs(slope_changes) > threshold)
+                    analytics['Num Abrupt Slope Changes'] = int(abrupt_changes)
     
     return analytics
+
+def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
+    """
+    Calculate correlation analysis between performance metrics and discharge curve characteristics.
+    
+    Args:
+        all_metrics_list: List of metric dictionaries for each build
+        all_analytics_list: List of analytics dictionaries for each build
+    
+    Returns:
+        Dictionary with correlation results and insights
+    """
+    correlations = {}
+    
+    if len(all_metrics_list) < 2:
+        return correlations  # Need at least 2 builds for correlation
+    
+    # Extract data for correlation analysis
+    ampere_secs_anode = []
+    ampere_secs_cathode = []
+    calorific_values = []
+    mean_slopes = []
+    slope_variabilities = []
+    
+    for metrics, analytics in zip(all_metrics_list, all_analytics_list):
+        # Ampere-seconds per gram metrics
+        if metrics.get('A·s per gram Anode') is not None:
+            ampere_secs_anode.append(metrics['A·s per gram Anode'])
+        if metrics.get('A·s per gram Cathode') is not None:
+            ampere_secs_cathode.append(metrics['A·s per gram Cathode'])
+        
+        # Calorific value
+        if metrics.get('Calorific Value per gram Stack (kJ/g)') is not None:
+            calorific_values.append(metrics['Calorific Value per gram Stack (kJ/g)'])
+        
+        # Discharge curve characteristics
+        if analytics.get('ΔV/ΔT Mean (V/s)') is not None:
+            mean_slopes.append(abs(analytics['ΔV/ΔT Mean (V/s)']))
+        if analytics.get('Discharge Slope Variability (%)') is not None:
+            slope_variabilities.append(analytics['Discharge Slope Variability (%)'])
+    
+    # Calculate correlations if we have enough data
+    if len(ampere_secs_anode) >= 2 and len(mean_slopes) >= 2 and len(ampere_secs_anode) == len(mean_slopes):
+        try:
+            corr_coef, p_value = stats.pearsonr(ampere_secs_anode, mean_slopes)
+            correlations['A·s/g Anode vs Mean Slope'] = {
+                'correlation': float(corr_coef),
+                'p_value': float(p_value),
+                'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',
+                'direction': 'Positive' if corr_coef > 0 else 'Negative',
+                'significance': 'Significant (p<0.05)' if p_value < 0.05 else 'Not significant'
+            }
+        except:
+            pass
+    
+    if len(ampere_secs_cathode) >= 2 and len(mean_slopes) >= 2 and len(ampere_secs_cathode) == len(mean_slopes):
+        try:
+            corr_coef, p_value = stats.pearsonr(ampere_secs_cathode, mean_slopes)
+            correlations['A·s/g Cathode vs Mean Slope'] = {
+                'correlation': float(corr_coef),
+                'p_value': float(p_value),
+                'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',
+                'direction': 'Positive' if corr_coef > 0 else 'Negative',
+                'significance': 'Significant (p<0.05)' if p_value < 0.05 else 'Not significant'
+            }
+        except:
+            pass
+    
+    if len(calorific_values) >= 2 and len(slope_variabilities) >= 2 and len(calorific_values) == len(slope_variabilities):
+        try:
+            corr_coef, p_value = stats.pearsonr(calorific_values, slope_variabilities)
+            correlations['Calorific Value vs Curve Stability'] = {
+                'correlation': float(corr_coef),
+                'p_value': float(p_value),
+                'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',
+                'direction': 'Positive' if corr_coef > 0 else 'Negative',
+                'significance': 'Significant (p<0.05)' if p_value < 0.05 else 'Not significant',
+                'interpretation': 'Higher calorific value correlates with less stable discharge' if corr_coef > 0 else 'Higher calorific value correlates with more stable discharge'
+            }
+        except:
+            pass
+    
+    # Add energy density correlations if data available
+    if len(ampere_secs_anode) >= 2 and len(ampere_secs_cathode) >= 2 and len(ampere_secs_anode) == len(ampere_secs_cathode):
+        try:
+            corr_coef, p_value = stats.pearsonr(ampere_secs_anode, ampere_secs_cathode)
+            correlations['Anode vs Cathode Performance'] = {
+                'correlation': float(corr_coef),
+                'p_value': float(p_value),
+                'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',
+                'direction': 'Positive' if corr_coef > 0 else 'Negative',
+                'significance': 'Significant (p<0.05)' if p_value < 0.05 else 'Not significant'
+            }
+        except:
+            pass
+    
+    return correlations
 
 def detect_anomalies(df, voltage_col, time_col=None):
     """Detect anomalies in discharge data using statistical methods"""
@@ -986,8 +1225,8 @@ def detect_anomalies(df, voltage_col, time_col=None):
     
     return anomalies, all_anomaly_indices
 
-def save_comparison_to_db(name, dataframes, build_names, metrics_df):
-    """Save comparison to database"""
+def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_type=None, extended_metadata=None):
+    """Save comparison to database with battery type and extended metadata"""
     if not Session:
         return False, "Database not configured"
     
@@ -999,13 +1238,16 @@ def save_comparison_to_db(name, dataframes, build_names, metrics_df):
             data_list.append(df.to_json(orient='split'))
         
         metrics_json = metrics_df.to_json(orient='split') if metrics_df is not None else None
+        extended_metadata_json = json.dumps(extended_metadata) if extended_metadata else None
         
         comparison = SavedComparison(
             name=name,
             num_builds=len(build_names),
             build_names=json.dumps(build_names),
             data_json=json.dumps(data_list),
-            metrics_json=metrics_json
+            metrics_json=metrics_json,
+            battery_type=battery_type,
+            extended_metadata_json=extended_metadata_json
         )
         
         session.add(comparison)
@@ -1017,9 +1259,9 @@ def save_comparison_to_db(name, dataframes, build_names, metrics_df):
         return False, f"Error saving comparison: {str(e)}"
 
 def load_comparison_from_db(comparison_id):
-    """Load comparison from database"""
+    """Load comparison from database with battery type and extended metadata"""
     if not Session:
-        return None, None, None, "Database not configured"
+        return None, None, None, None, None, "Database not configured"
     
     try:
         session = Session()
@@ -1027,7 +1269,7 @@ def load_comparison_from_db(comparison_id):
         
         if not comparison:
             session.close()
-            return None, None, None, "Comparison not found"
+            return None, None, None, None, None, "Comparison not found"
         
         build_names = json.loads(comparison.build_names)
         data_list = json.loads(comparison.data_json)
@@ -1041,11 +1283,14 @@ def load_comparison_from_db(comparison_id):
         if comparison.metrics_json:
             metrics_df = pd.read_json(io.StringIO(comparison.metrics_json), orient='split')
         
+        battery_type = comparison.battery_type if hasattr(comparison, 'battery_type') else None
+        extended_metadata = json.loads(comparison.extended_metadata_json) if comparison.extended_metadata_json else {}
+        
         session.close()
         
-        return dataframes, build_names, metrics_df, "Loaded successfully"
+        return dataframes, build_names, metrics_df, battery_type, extended_metadata, "Loaded successfully"
     except Exception as e:
-        return None, None, None, f"Error loading comparison: {str(e)}"
+        return None, None, None, None, None, f"Error loading comparison: {str(e)}"
 
 def get_all_saved_comparisons():
     """Get list of all saved comparisons"""
@@ -1091,6 +1336,32 @@ def delete_comparison_from_db(comparison_id):
     except Exception as e:
         return False, f"Error deleting comparison: {str(e)}"
 
+st.sidebar.header("🔋 Battery Type Selection")
+st.sidebar.markdown("Select the battery type for this analysis session")
+
+if 'battery_type' not in st.session_state:
+    st.session_state['battery_type'] = "General"
+
+battery_type = st.sidebar.selectbox(
+    "Battery Type:",
+    options=["General", "Madhava", "Low-Voltage (0.9-1.5V)", "High-Voltage (27-35V)", "Custom"],
+    key='battery_type',
+    help="Select the battery type. All data and analysis will be organized by this type."
+)
+
+if battery_type == "Custom":
+    custom_battery_name = st.sidebar.text_input(
+        "Custom Battery Name:",
+        value="",
+        key='custom_battery_name',
+        help="Enter a custom name for your battery type"
+    )
+    if custom_battery_name:
+        battery_type = custom_battery_name
+
+st.sidebar.info(f"📊 Current Battery Type: **{battery_type}**")
+
+st.sidebar.markdown("---")
 st.sidebar.header("📁 Data Input Mode")
 
 data_mode = st.sidebar.radio(
@@ -1121,10 +1392,14 @@ if DATABASE_URL and Session:
             col1, col2 = st.sidebar.columns(2)
             with col1:
                 if st.button("📂 Load", key='load_btn'):
-                    loaded_dfs, loaded_names, loaded_metrics, msg = load_comparison_from_db(comparison_id)
+                    loaded_dfs, loaded_names, loaded_metrics, loaded_battery_type, loaded_extended_meta, msg = load_comparison_from_db(comparison_id)
                     if loaded_dfs:
                         st.session_state['loaded_dataframes'] = loaded_dfs
                         st.session_state['loaded_build_names'] = loaded_names
+                        if loaded_battery_type:
+                            st.session_state['battery_type'] = loaded_battery_type
+                        if loaded_extended_meta:
+                            st.session_state['build_metadata_extended'] = loaded_extended_meta
                         st.success(msg)
                         st.rerun()
                     else:
@@ -1230,6 +1505,9 @@ if data_mode == "Upload Files":
     
     st.sidebar.markdown("---")
     
+    if 'build_metadata_extended' not in st.session_state:
+        st.session_state['build_metadata_extended'] = {}
+    
     if 'loaded_dataframes' in st.session_state and 'loaded_build_names' in st.session_state:
         dataframes = st.session_state['loaded_dataframes']
         build_names = st.session_state['loaded_build_names']
@@ -1253,6 +1531,96 @@ if data_mode == "Upload Files":
                 type=['csv', 'xlsx', 'xls'],
                 key=f"file_{i}"
             )
+            
+            with st.sidebar.expander("⚙️ Extended Build Metadata (Optional)", expanded=False):
+                st.markdown("**Weight Inputs (per cell)**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    anode_weight = st.number_input(
+                        "Anode weight (g):", 
+                        min_value=0.0, 
+                        max_value=1000.0, 
+                        value=0.0, 
+                        step=0.01,
+                        key=f"anode_weight_{i}",
+                        help="Weight of anode material per cell in grams"
+                    )
+                    cathode_weight = st.number_input(
+                        "Cathode weight (g):", 
+                        min_value=0.0, 
+                        max_value=1000.0, 
+                        value=0.0, 
+                        step=0.01,
+                        key=f"cathode_weight_{i}",
+                        help="Weight of cathode material per cell in grams"
+                    )
+                with col2:
+                    heat_pellet_weight = st.number_input(
+                        "Heat pellet (g):", 
+                        min_value=0.0, 
+                        max_value=1000.0, 
+                        value=0.0, 
+                        step=0.01,
+                        key=f"heat_pellet_{i}",
+                        help="Weight of heat pellet in grams"
+                    )
+                    electrolyte_weight = st.number_input(
+                        "Electrolyte (g):", 
+                        min_value=0.0, 
+                        max_value=1000.0, 
+                        value=0.0, 
+                        step=0.01,
+                        key=f"electrolyte_{i}",
+                        help="Weight of electrolyte in grams"
+                    )
+                
+                st.markdown("**Cell Configuration**")
+                col3, col4 = st.columns(2)
+                with col3:
+                    cells_in_series = st.number_input(
+                        "Cells in series:", 
+                        min_value=1, 
+                        max_value=100, 
+                        value=1, 
+                        step=1,
+                        key=f"cells_series_{i}",
+                        help="Number of cells connected in series"
+                    )
+                with col4:
+                    stacks_in_parallel = st.number_input(
+                        "Stacks in parallel:", 
+                        min_value=1, 
+                        max_value=100, 
+                        value=1, 
+                        step=1,
+                        key=f"stacks_parallel_{i}",
+                        help="Number of stacks connected in parallel"
+                    )
+                
+                st.markdown("**Energy Input**")
+                calorific_value = st.number_input(
+                    "Calorific value (kJ/g):", 
+                    min_value=0.0, 
+                    max_value=1000.0, 
+                    value=0.0, 
+                    step=0.1,
+                    key=f"calorific_value_{i}",
+                    help="Calorific value per gram in kJ/g"
+                )
+                
+                st.session_state['build_metadata_extended'][i] = {
+                    'anode_weight_per_cell': anode_weight,
+                    'cathode_weight_per_cell': cathode_weight,
+                    'heat_pellet_weight': heat_pellet_weight,
+                    'electrolyte_weight': electrolyte_weight,
+                    'cells_in_series': cells_in_series,
+                    'stacks_in_parallel': stacks_in_parallel,
+                    'calorific_value_per_gram': calorific_value,
+                    'total_anode_weight': anode_weight * cells_in_series if anode_weight > 0 else 0,
+                    'total_cathode_weight': cathode_weight * cells_in_series if cathode_weight > 0 else 0,
+                    'total_stack_weight': (anode_weight + cathode_weight) * cells_in_series + heat_pellet_weight + electrolyte_weight if (anode_weight + cathode_weight) > 0 else 0,
+                    'total_calorific_value': calorific_value * ((anode_weight + cathode_weight) * cells_in_series + heat_pellet_weight + electrolyte_weight) if calorific_value > 0 else 0
+                }
             
             if uploaded_file:
                 uploaded_files.append(uploaded_file)
@@ -1327,14 +1695,17 @@ if len(dataframes) == num_builds and num_builds > 0:
         build_info_data = []
         for idx, (name, metadata) in enumerate(zip(build_names, metadata_list)):
             info = {
-                'Build Name': name,
-                'Battery Code': metadata.get('battery_code', 'N/A') if metadata else 'N/A',
-                'Temperature': metadata.get('temperature', 'N/A') if metadata else 'N/A',
-                'Build ID': metadata.get('build_id', 'N/A') if metadata else 'N/A'
+                'Build Name': str(name),
+                'Battery Code': str(metadata.get('battery_code', 'N/A')) if metadata else 'N/A',
+                'Temperature': str(metadata.get('temperature', 'N/A')) if metadata else 'N/A',
+                'Build ID': str(metadata.get('build_id', 'N/A')) if metadata else 'N/A'
             }
             build_info_data.append(info)
         
         build_info_df = pd.DataFrame(build_info_data)
+        # Ensure all columns are string type to avoid pyarrow serialization errors
+        for col in build_info_df.columns:
+            build_info_df[col] = build_info_df[col].astype(str)
         st.dataframe(build_info_df, use_container_width=True, hide_index=True)
         st.markdown("---")
     
@@ -1379,9 +1750,11 @@ if len(dataframes) == num_builds and num_builds > 0:
                     hovertemplate=f'<b>{name}</b><br>{x_label}: %{{x}}<br>Voltage: %{{y:.3f}} V<extra></extra>'
                 ))
                 
+                extended_meta = st.session_state.get('build_metadata_extended', {}).get(idx, {})
                 metrics = calculate_metrics(
                     df, time_col, voltage_col, current_col, 
-                    min_activation_voltage=min_activation_voltage
+                    min_activation_voltage=min_activation_voltage,
+                    extended_metadata=extended_meta
                 )
                 metrics['Build'] = name
                 all_metrics.append(metrics)
@@ -1524,11 +1897,13 @@ if len(dataframes) == num_builds and num_builds > 0:
         
         all_build_metrics = []
         
-        for df, name in zip(dataframes, build_names):
+        for idx, (df, name) in enumerate(zip(dataframes, build_names)):
             time_col, voltage_col, current_col, capacity_col = detect_columns(df)
+            extended_meta = st.session_state.get('build_metadata_extended', {}).get(idx, {})
             metrics = calculate_metrics(
                 df, time_col, voltage_col, current_col,
-                min_activation_voltage=min_activation_voltage
+                min_activation_voltage=min_activation_voltage,
+                extended_metadata=extended_meta
             )
             metrics['Build'] = name
             all_build_metrics.append(metrics)
@@ -1591,7 +1966,13 @@ if len(dataframes) == num_builds and num_builds > 0:
                     if st.button("💾 Save", key='save_comparison_btn'):
                         comparison_name = st.text_input("Comparison name:", value=f"Comparison_{timestamp}", key='comparison_name_input')
                         if comparison_name:
-                            success, msg = save_comparison_to_db(comparison_name, dataframes, build_names, metrics_df)
+                            current_battery_type = st.session_state.get('battery_type', 'General')
+                            current_extended_meta = st.session_state.get('build_metadata_extended', {})
+                            success, msg = save_comparison_to_db(
+                                comparison_name, dataframes, build_names, metrics_df,
+                                battery_type=current_battery_type,
+                                extended_metadata=current_extended_meta
+                            )
                             if success:
                                 st.success(msg)
                             else:
@@ -1758,11 +2139,15 @@ if len(dataframes) == num_builds and num_builds > 0:
                 if analytics:
                     analytics_df = pd.DataFrame([analytics]).T
                     analytics_df.columns = ['Value']
+                    # Convert Value column to string to avoid pyarrow serialization errors with mixed types
+                    analytics_df['Value'] = analytics_df['Value'].astype(str)
                     
                     def format_value(val):
-                        if isinstance(val, (int, float, np.number)):
-                            return f"{val:.4f}"
-                        else:
+                        # Format numeric string representations
+                        try:
+                            num_val = float(val)
+                            return f"{num_val:.4f}"
+                        except (ValueError, TypeError):
                             return str(val)
                     
                     st.dataframe(analytics_df.style.format(format_value), use_container_width=True)
@@ -1834,6 +2219,74 @@ if len(dataframes) == num_builds and num_builds > 0:
                 st.success("✅ No significant anomalies detected")
             
             st.markdown("---")
+        
+        # Correlation Analysis Section (only if we have multiple builds with extended metadata)
+        if num_builds >= 2:
+            st.markdown("---")
+            st.header("🔗 Correlation Analysis")
+            st.markdown("*Analyzing relationships between performance metrics and discharge curve characteristics*")
+            
+            # Collect all metrics and analytics for correlation analysis
+            all_metrics_for_corr = []
+            all_analytics_for_corr = []
+            
+            for idx, (df, name) in enumerate(zip(dataframes, build_names)):
+                time_col, voltage_col, current_col, capacity_col = detect_columns(df)
+                extended_meta = st.session_state.get('build_metadata_extended', {}).get(idx, {})
+                
+                metrics = calculate_metrics(
+                    df, time_col, voltage_col, current_col,
+                    min_activation_voltage=min_activation_voltage,
+                    extended_metadata=extended_meta
+                )
+                analytics = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
+                
+                all_metrics_for_corr.append(metrics)
+                all_analytics_for_corr.append(analytics)
+            
+            # Calculate correlations
+            correlations = calculate_correlation_analysis(all_metrics_for_corr, all_analytics_for_corr)
+            
+            if correlations:
+                st.success(f"✅ Found {len(correlations)} correlation relationships")
+                
+                for corr_name, corr_data in correlations.items():
+                    with st.expander(f"📊 {corr_name}", expanded=True):
+                        col1, col2 = st.columns([1, 2])
+                        
+                        with col1:
+                            # Display correlation metrics
+                            st.metric("Correlation Coefficient", f"{corr_data['correlation']:.3f}")
+                            st.metric("Strength", corr_data['strength'])
+                            st.metric("Direction", corr_data['direction'])
+                            st.metric("Significance", corr_data['significance'])
+                        
+                        with col2:
+                            # Display interpretation
+                            st.markdown("**Interpretation:**")
+                            if 'interpretation' in corr_data:
+                                st.info(corr_data['interpretation'])
+                            
+                            abs_corr = abs(corr_data['correlation'])
+                            if abs_corr > 0.7:
+                                st.markdown("- **Strong relationship**: Changes in one variable are highly predictive of changes in the other")
+                            elif abs_corr > 0.4:
+                                st.markdown("- **Moderate relationship**: Some predictive value between the variables")
+                            else:
+                                st.markdown("- **Weak relationship**: Limited predictive value")
+                            
+                            if corr_data['p_value'] < 0.05:
+                                st.markdown("- ✅ **Statistically significant** (p < 0.05): This relationship is unlikely to be due to random chance")
+                            else:
+                                st.markdown("- ⚠️ **Not statistically significant**: This relationship may be due to random chance")
+            else:
+                st.info("ℹ️ Correlation analysis requires at least 2 builds with extended metadata (weights, calorific value) to be entered.")
+                st.markdown("**To enable correlation analysis:**")
+                st.markdown("1. Enter extended build metadata (anode/cathode weights, calorific value) for at least 2 builds")
+                st.markdown("2. The analysis will automatically calculate correlations between:")
+                st.markdown("   - Ampere-seconds per gram vs discharge slope")
+                st.markdown("   - Calorific value vs curve stability")
+                st.markdown("   - Anode vs cathode performance")
     
     with tab5:
         st.header("Data Preview")
@@ -1872,9 +2325,11 @@ if len(dataframes) == num_builds and num_builds > 0:
                 temp = extract_temperature_from_name(name)
             
             time_col, voltage_col, current_col, capacity_col = detect_columns(df)
+            extended_meta = st.session_state.get('build_metadata_extended', {}).get(idx, {})
             metrics = calculate_metrics(
                 df, time_col, voltage_col, current_col,
-                min_activation_voltage=min_activation_voltage
+                min_activation_voltage=min_activation_voltage,
+                extended_metadata=extended_meta
             )
             advanced = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
             
