@@ -46,7 +46,7 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 - **Max On-Load Voltage**: Maximum voltage when current is flowing (≥0.01A)
 - **Max Open Circuit Voltage**: Maximum voltage when current is near zero (<0.01A)
 - **Activation Time (Sec)**: The time when battery FIRST reaches ≥ minimum voltage for activation
-- **Duration (Sec)**: The TOTAL cumulative time when voltage ≥ minimum voltage for activation (sum of all time periods above threshold, NOT continuous)
+- **Duration (Sec)**: Time from activation to LAST occurrence of cutoff voltage (the time span from when battery first activates to the last time it reaches the cutoff voltage)
 
 **Standard Performance Benchmarks**:
 - Optional comparison against target performance levels

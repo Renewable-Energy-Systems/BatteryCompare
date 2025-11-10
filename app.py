@@ -323,7 +323,7 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
         
         # Calculate activation time and duration
         # Activation Time (Sec): The time when battery FIRST reaches >= min_activation_voltage
-        # Duration (Sec): The TOTAL cumulative time when voltage >= min_activation_voltage
+        # Duration (Sec): Time from activation to LAST occurrence of voltage >= min_activation_voltage
         if voltage_col and voltage_col in df.columns:
             # Create mask for when voltage is >= minimum activation voltage
             above_threshold_mask = df[voltage_col] >= min_activation_voltage
@@ -331,6 +331,11 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
             if above_threshold_mask.any():
                 # Find the FIRST time when voltage >= min_activation_voltage
                 first_activation_idx = above_threshold_mask.idxmax()
+                
+                # Find the LAST time when voltage >= min_activation_voltage
+                # Get indices where voltage is above threshold
+                above_threshold_indices = df[above_threshold_mask].index
+                last_occurrence_idx = above_threshold_indices[-1]
                 
                 # Get time series as seconds (not minutes)
                 if pd.api.types.is_timedelta64_dtype(time_series):
@@ -344,12 +349,8 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                 # Activation Time: time at first occurrence
                 activation_time_sec = time_in_seconds.iloc[first_activation_idx] - time_in_seconds.iloc[0]
                 
-                # Duration: cumulative sum of time periods when voltage >= threshold
-                # Calculate time differences between consecutive points
-                time_diffs = time_in_seconds.diff().fillna(0)
-                
-                # Sum up time intervals where voltage >= threshold
-                duration_sec = time_diffs[above_threshold_mask].sum()
+                # Duration: Time from first activation to LAST occurrence of cutoff voltage
+                duration_sec = time_in_seconds.iloc[last_occurrence_idx] - time_in_seconds.iloc[first_activation_idx]
                 
                 metrics['Activation Time (Sec)'] = float(activation_time_sec)
                 metrics['Duration (Sec)'] = float(duration_sec)
@@ -480,7 +481,7 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
     report.append("-" * 80)
     report.append(f"Min. Voltage for Activation: {min_activation_voltage} V")
     report.append("Note: Activation Time (Sec) = Time when battery FIRST reaches >= min voltage")
-    report.append("      Duration (Sec) = TOTAL cumulative time when voltage >= min voltage")
+    report.append("      Duration (Sec) = Time from activation to LAST occurrence of cutoff voltage")
     report.append("")
     
     # Build Information
