@@ -386,7 +386,7 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
             metrics['Total Energy (Wh)'] = float(energy)
     
     # Calculate extended performance metrics if metadata is provided
-    if extended_metadata and current_col and current_col in df.columns and time_col and time_col in df.columns:
+    if extended_metadata and current_col and current_col in df.columns and time_col and time_col in df.columns and voltage_col and voltage_col in df.columns:
         # Check if time_series was successfully created and converted earlier
         if 'time_series' in locals() and time_series is not None:
             # Reuse the already-converted time_series from above
@@ -402,39 +402,64 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                 time_in_seconds = time_series * 60
             
             if len(df) > 1:
-                time_diff_seconds = pd.Series(time_in_seconds).diff().fillna(0)
-                current_abs = df[current_col].abs()
+                # Create discharge mask to only include data from activation to last cutoff
+                above_threshold_mask = df[voltage_col] >= min_activation_voltage
                 
-                # Total ampere-seconds = sum of (current * time_diff)
-                total_ampere_seconds = (current_abs * time_diff_seconds).sum()
-                metrics['Total Ampere-Seconds (A·s)'] = float(total_ampere_seconds)
-                
-                # Calculate per-gram metrics if weights are provided
-                total_anode_weight = extended_metadata.get('total_anode_weight', 0)
-                total_cathode_weight = extended_metadata.get('total_cathode_weight', 0)
-                total_stack_weight = extended_metadata.get('total_stack_weight', 0)
-                
-                # Ampere-seconds per gram of anode
-                if total_anode_weight > 0:
-                    metrics['A·s per gram Anode'] = float(total_ampere_seconds / total_anode_weight)
+                if above_threshold_mask.any():
+                    # Use the same indices calculated for activation/duration
+                    first_activation_idx = above_threshold_mask.idxmax()
+                    above_threshold_indices = df[above_threshold_mask].index
+                    last_occurrence_idx = above_threshold_indices[-1]
+                    
+                    # Filter to discharge period only
+                    discharge_mask = (df.index >= first_activation_idx) & (df.index <= last_occurrence_idx)
+                    
+                    # Calculate ampere-seconds only during discharge period
+                    time_diff_seconds = pd.Series(time_in_seconds).diff().fillna(0)
+                    current_abs = df[current_col].abs()
+                    
+                    # Create a mask that excludes intervals starting before activation
+                    # (both current and previous sample must be in discharge period)
+                    discharge_mask_prev = discharge_mask.shift(1, fill_value=False)
+                    valid_discharge_intervals = discharge_mask & discharge_mask_prev
+                    
+                    # Total ampere-seconds = sum of (current * time_diff) during discharge only
+                    total_ampere_seconds = (current_abs[valid_discharge_intervals] * time_diff_seconds[valid_discharge_intervals]).sum()
+                    metrics['Total Ampere-Seconds (A·s)'] = float(total_ampere_seconds)
+                    
+                    # Calculate total weights from per-cell values (with backward compatibility)
+                    anode_weight_per_cell = extended_metadata.get('anode_weight_per_cell', 0)
+                    cathode_weight_per_cell = extended_metadata.get('cathode_weight_per_cell', 0)
+                    stacks_in_parallel = extended_metadata.get('stacks_in_parallel', 1)
+                    
+                    # Total weight of all cells in parallel = per_cell × stacks_in_parallel
+                    # Fall back to legacy total_*_weight if per-cell values not provided
+                    if anode_weight_per_cell and stacks_in_parallel:
+                        total_anode_weight_parallel = anode_weight_per_cell * stacks_in_parallel
+                    else:
+                        total_anode_weight_parallel = extended_metadata.get('total_anode_weight', 0)
+                    
+                    if cathode_weight_per_cell and stacks_in_parallel:
+                        total_cathode_weight_parallel = cathode_weight_per_cell * stacks_in_parallel
+                    else:
+                        total_cathode_weight_parallel = extended_metadata.get('total_cathode_weight', 0)
+                    
+                    # Ampere-seconds per gram of anode (using total weight of all cells in parallel)
+                    if total_anode_weight_parallel > 0:
+                        metrics['A·s per gram Anode'] = float(total_ampere_seconds / total_anode_weight_parallel)
+                    else:
+                        metrics['A·s per gram Anode'] = None
+                    
+                    # Ampere-seconds per gram of cathode (using total weight of all cells in parallel)
+                    if total_cathode_weight_parallel > 0:
+                        metrics['A·s per gram Cathode'] = float(total_ampere_seconds / total_cathode_weight_parallel)
+                    else:
+                        metrics['A·s per gram Cathode'] = None
                 else:
+                    # No discharge period found
+                    metrics['Total Ampere-Seconds (A·s)'] = None
                     metrics['A·s per gram Anode'] = None
-                
-                # Ampere-seconds per gram of cathode
-                if total_cathode_weight > 0:
-                    metrics['A·s per gram Cathode'] = float(total_ampere_seconds / total_cathode_weight)
-                else:
                     metrics['A·s per gram Cathode'] = None
-                
-                # Calorific value per gram of total stack weight
-                calorific_value_per_gram = extended_metadata.get('calorific_value_per_gram', 0)
-                if calorific_value_per_gram > 0 and total_stack_weight > 0:
-                    # This is already a per-gram value, but we include it in metrics for completeness
-                    metrics['Calorific Value per gram Stack (kJ/g)'] = float(calorific_value_per_gram)
-                    metrics['Total Stack Weight (g)'] = float(total_stack_weight)
-                else:
-                    metrics['Calorific Value per gram Stack (kJ/g)'] = None
-                    metrics['Total Stack Weight (g)'] = float(total_stack_weight) if total_stack_weight > 0 else None
     
     return metrics
 
@@ -859,7 +884,7 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
     # Advanced Performance Metrics Section
     if metrics_df is not None and not metrics_df.empty:
         advanced_metrics = ['Total Ampere-Seconds (A·s)', 'A·s per gram Anode', 
-                          'A·s per gram Cathode', 'Calorific Value per gram Stack (kJ/g)']
+                          'A·s per gram Cathode']
         
         if any(m in metrics_df.columns for m in advanced_metrics):
             story.append(PageBreak())
@@ -1173,8 +1198,161 @@ def calculate_advanced_analytics(df, time_col, voltage_col, current_col=None):
                     threshold = 3 * np.std(slope_changes)
                     abrupt_changes = np.sum(np.abs(slope_changes) > threshold)
                     analytics['Num Abrupt Slope Changes'] = int(abrupt_changes)
+                
+                # Find longest plateau where ΔV/ΔT is constant (±5% deviation)
+                # Use two-pointer approach to find longest contiguous interval
+                if len(delta_v_delta_t_values) >= 2:
+                    max_plateau_length = 0
+                    max_plateau_start_idx = 0
+                    max_plateau_end_idx = 0
+                    
+                    # Absolute tolerance floor for near-zero slopes (V/s)
+                    abs_tolerance = 0.001  # 1 mV/s
+                    
+                    # Try each starting point
+                    for start_idx in range(len(delta_v_delta_t_values)):
+                        # Find the longest interval starting from this point
+                        for end_idx in range(start_idx + 1, len(delta_v_delta_t_values) + 1):
+                            segment = delta_v_delta_t_values[start_idx:end_idx]
+                            segment_mean_abs = np.mean(np.abs(segment))
+                            
+                            # Use max of 5% relative tolerance and absolute tolerance
+                            tolerance = max(0.05 * segment_mean_abs, abs_tolerance)
+                            
+                            # Check if all values in segment are within tolerance of segment mean
+                            deviations_abs = np.abs(np.abs(segment) - segment_mean_abs)
+                            if np.all(deviations_abs <= tolerance):
+                                # This segment is valid, check if it's the longest
+                                if len(segment) > max_plateau_length:
+                                    max_plateau_length = len(segment)
+                                    max_plateau_start_idx = start_idx
+                                    max_plateau_end_idx = end_idx - 1
+                            else:
+                                # Segment failed, no point checking longer segments from this start
+                                break
+                    
+                    if max_plateau_length >= 2:
+                        # Convert indices to time in seconds
+                        plateau_start_time = interval_times[max_plateau_start_idx]
+                        plateau_end_time = interval_times[max_plateau_end_idx]
+                        
+                        analytics['Constant ΔV/ΔT Region Start (s)'] = float(plateau_start_time)
+                        analytics['Constant ΔV/ΔT Region End (s)'] = float(plateau_end_time)
+                        analytics['Constant ΔV/ΔT Duration (s)'] = float(plateau_end_time - plateau_start_time)
+                        analytics['Constant ΔV/ΔT Region'] = f"from {plateau_start_time:.1f}s to {plateau_end_time:.1f}s ({plateau_end_time - plateau_start_time:.1f}s duration)"
+                    else:
+                        analytics['Constant ΔV/ΔT Region'] = "No constant region found (ΔV/ΔT varies by >5%)"
     
     return analytics
+
+def calculate_duration_correlations(all_metrics_list, all_extended_metadata_list):
+    """
+    Calculate correlations between actual duration and total weights/calorific value.
+    
+    Args:
+        all_metrics_list: List of metric dictionaries for each build
+        all_extended_metadata_list: List of extended metadata dictionaries for each build
+    
+    Returns:
+        Dictionary with correlation results and actual values used
+    """
+    correlations = {}
+    
+    if len(all_metrics_list) < 2:
+        return correlations
+    
+    # Extract data
+    durations = []
+    total_anode_weights = []
+    total_cathode_weights = []
+    total_calorific_values = []
+    build_info = []  # Store actual values for display
+    
+    for metrics, ext_meta in zip(all_metrics_list, all_extended_metadata_list):
+        duration = metrics.get('Duration (Sec)')
+        if duration is None or not ext_meta:
+            continue
+        
+        # Calculate total weights from per-cell values
+        anode_per_cell = ext_meta.get('anode_weight_per_cell', 0)
+        cathode_per_cell = ext_meta.get('cathode_weight_per_cell', 0)
+        stacks_in_parallel = ext_meta.get('stacks_in_parallel', 1)
+        
+        # Fall back to legacy total weights if per-cell not available
+        if anode_per_cell and stacks_in_parallel:
+            total_anode = anode_per_cell * stacks_in_parallel
+        else:
+            total_anode = ext_meta.get('total_anode_weight', 0)
+        
+        if cathode_per_cell and stacks_in_parallel:
+            total_cathode = cathode_per_cell * stacks_in_parallel
+        else:
+            total_cathode = ext_meta.get('total_cathode_weight', 0)
+        
+        # Calculate total calorific value
+        calorific_per_g = ext_meta.get('calorific_value_per_g', 0)
+        total_stack_weight = ext_meta.get('total_stack_weight', 0)
+        total_calorific = calorific_per_g * total_stack_weight if calorific_per_g and total_stack_weight else 0
+        
+        # Store data
+        durations.append(duration)
+        total_anode_weights.append(total_anode)
+        total_cathode_weights.append(total_cathode)
+        total_calorific_values.append(total_calorific)
+        build_info.append({
+            'Duration (s)': duration,
+            'Total Anode Weight (g)': total_anode,
+            'Total Cathode Weight (g)': total_cathode,
+            'Total Calorific Value (kJ)': total_calorific
+        })
+    
+    # Calculate correlations if we have enough valid data
+    if len(durations) >= 2:
+        correlations['values_table'] = build_info
+        
+        # Duration vs Total Anode Weight
+        if len(total_anode_weights) >= 2 and all(w > 0 for w in total_anode_weights):
+            try:
+                corr, p_val = stats.pearsonr(durations, total_anode_weights)
+                correlations['Duration vs Total Anode Weight'] = {
+                    'correlation': float(corr),
+                    'p_value': float(p_val),
+                    'strength': 'Strong' if abs(corr) > 0.7 else 'Moderate' if abs(corr) > 0.4 else 'Weak',
+                    'direction': 'Positive' if corr > 0 else 'Negative',
+                    'significance': 'Significant (p<0.05)' if p_val < 0.05 else 'Not significant'
+                }
+            except:
+                pass
+        
+        # Duration vs Total Cathode Weight
+        if len(total_cathode_weights) >= 2 and all(w > 0 for w in total_cathode_weights):
+            try:
+                corr, p_val = stats.pearsonr(durations, total_cathode_weights)
+                correlations['Duration vs Total Cathode Weight'] = {
+                    'correlation': float(corr),
+                    'p_value': float(p_val),
+                    'strength': 'Strong' if abs(corr) > 0.7 else 'Moderate' if abs(corr) > 0.4 else 'Weak',
+                    'direction': 'Positive' if corr > 0 else 'Negative',
+                    'significance': 'Significant (p<0.05)' if p_val < 0.05 else 'Not significant'
+                }
+            except:
+                pass
+        
+        # Duration vs Total Calorific Value
+        if len(total_calorific_values) >= 2 and all(c > 0 for c in total_calorific_values):
+            try:
+                corr, p_val = stats.pearsonr(durations, total_calorific_values)
+                correlations['Duration vs Total Calorific Value'] = {
+                    'correlation': float(corr),
+                    'p_value': float(p_val),
+                    'strength': 'Strong' if abs(corr) > 0.7 else 'Moderate' if abs(corr) > 0.4 else 'Weak',
+                    'direction': 'Positive' if corr > 0 else 'Negative',
+                    'significance': 'Significant (p<0.05)' if p_val < 0.05 else 'Not significant'
+                }
+            except:
+                pass
+    
+    return correlations
 
 def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
     """
@@ -1195,7 +1373,6 @@ def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
     # Extract data for correlation analysis
     ampere_secs_anode = []
     ampere_secs_cathode = []
-    calorific_values = []
     mean_slopes = []
     slope_variabilities = []
     
@@ -1205,10 +1382,6 @@ def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
             ampere_secs_anode.append(metrics['A·s per gram Anode'])
         if metrics.get('A·s per gram Cathode') is not None:
             ampere_secs_cathode.append(metrics['A·s per gram Cathode'])
-        
-        # Calorific value
-        if metrics.get('Calorific Value per gram Stack (kJ/g)') is not None:
-            calorific_values.append(metrics['Calorific Value per gram Stack (kJ/g)'])
         
         # Discharge curve characteristics
         if analytics.get('ΔV/ΔT Mean (V/s)') is not None:
@@ -1239,20 +1412,6 @@ def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
                 'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',
                 'direction': 'Positive' if corr_coef > 0 else 'Negative',
                 'significance': 'Significant (p<0.05)' if p_value < 0.05 else 'Not significant'
-            }
-        except:
-            pass
-    
-    if len(calorific_values) >= 2 and len(slope_variabilities) >= 2 and len(calorific_values) == len(slope_variabilities):
-        try:
-            corr_coef, p_value = stats.pearsonr(calorific_values, slope_variabilities)
-            correlations['Calorific Value vs Curve Stability'] = {
-                'correlation': float(corr_coef),
-                'p_value': float(p_value),
-                'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',
-                'direction': 'Positive' if corr_coef > 0 else 'Negative',
-                'significance': 'Significant (p<0.05)' if p_value < 0.05 else 'Not significant',
-                'interpretation': 'Higher calorific value correlates with less stable discharge' if corr_coef > 0 else 'Higher calorific value correlates with more stable discharge'
             }
         except:
             pass

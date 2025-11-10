@@ -6,28 +6,28 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 
 ## Recent Updates (Nov 2025)
 
-**Extended Build Metadata & Advanced Metrics** (Nov 7, 2025):
-- **Extended Build Information Form**: 7 new input fields per build for detailed battery construction data
+**Extended Build Metadata & Advanced Metrics** (Nov 10, 2025):
+- **Extended Build Information Form**: 7 input fields per build for detailed battery construction data
   - Weight inputs: Anode weight per cell, Cathode weight per cell, Heat pellet weight per cell, Electrolyte weight per cell
   - Configuration: Cells in series, Stacks in parallel
   - Energy: Calorific value per gram stack (kJ/g)
-- **Automatic Weight Calculations**: Total weights calculated from per-cell values and cell configuration
-  - Total Anode Weight = anode_weight_per_cell × cells_in_series
-  - Total Cathode Weight = cathode_weight_per_cell × cells_in_series
+- **Automatic Weight Calculations**: Total weights for all cells in parallel
+  - Total Anode Weight (all cells) = anode_weight_per_cell × stacks_in_parallel
+  - Total Cathode Weight (all cells) = cathode_weight_per_cell × stacks_in_parallel
   - Total Stack Weight = sum of all components × cells_in_series
 - **Advanced Performance Metrics**:
-  - **Total Ampere-Seconds (A·s)**: Charge capacity calculated as integral of current over time
-  - **A·s per gram Anode**: Energy efficiency metric normalized by anode mass
-  - **A·s per gram Cathode**: Energy efficiency metric normalized by cathode mass
-  - **Calorific Value per gram Stack**: Energy density of the complete battery stack
+  - **Total Ampere-Seconds (A·s)**: Calculated ONLY during discharge period (from activation to last occurrence of cutoff voltage)
+  - **A·s per gram Anode**: Total A·s / Total anode weight of all cells in parallel
+  - **A·s per gram Cathode**: Total A·s / Total cathode weight of all cells in parallel
 - **Discharge Curve Analysis**:
   - **ΔV/ΔT at 5-second intervals**: Voltage rate of change analysis for curve characterization
-  - **Curve Stability Assessment**: Statistical analysis of discharge slope variability
-  - **Slope Commentary**: Automated interpretation of discharge behavior (stable, gradual degradation, rapid drop)
-- **Correlation Analysis**: Statistical relationships between performance metrics
-  - Ampere-seconds per gram (anode) vs discharge slope
-  - Ampere-seconds per gram (cathode) vs discharge slope
-  - Calorific value vs curve stability metrics
+  - **Constant ΔV/ΔT Region**: Finds longest time period where ΔV/ΔT remains within ±5% deviation
+  - **Actionable Output**: Reports as "from X seconds to Y seconds" with duration
+  - **Plateau Detection**: Uses absolute tolerance floor (1mV/s) to handle near-flat discharge curves
+- **Correlation Analysis**:
+  - **Performance Correlations**: A·s/gram (anode/cathode) vs discharge slope
+  - **Duration Correlations**: Actual duration vs total anode weight, total cathode weight, and total calorific value
+  - **Values Table**: Shows actual values used in correlation computations
 - **Database Schema Updates**:
   - Added `battery_type` column to SavedComparison table for filtering saved analyses by battery chemistry
   - Added `extended_metadata_json` column for persisting build construction details
