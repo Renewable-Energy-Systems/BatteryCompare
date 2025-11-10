@@ -654,7 +654,8 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                         std_duration_sec=None,
                         extended_metadata_list=None,
                         analytics_list=None,
-                        correlations=None):
+                        correlations=None,
+                        duration_correlations=None):
     """Generate a comprehensive PDF report with all metrics, analytics, and correlations"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
@@ -997,6 +998,80 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         """
         story.append(Paragraph(interp_text, styles['Normal']))
         story.append(Spacer(1, 0.2*inch))
+    
+    # Duration vs Battery Construction Correlations Section
+    if duration_correlations and len(duration_correlations) > 0:
+        story.append(PageBreak())
+        story.append(Paragraph("Duration vs Battery Construction Correlations", heading_style))
+        story.append(Spacer(1, 0.1*inch))
+        story.append(Paragraph("<i>Analyzing how battery construction parameters affect discharge duration</i>", styles['Normal']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Display values table if present
+        if 'values_table' in duration_correlations:
+            story.append(Paragraph("<b>Actual Values Used in Analysis:</b>", styles['Normal']))
+            story.append(Spacer(1, 0.05*inch))
+            
+            values_table_data = [['Build', 'Duration (s)', 'Total Anode (g)', 'Total Cathode (g)', 'Total Calorific (kJ)']]
+            for idx, row_dict in enumerate(duration_correlations['values_table']):
+                values_table_data.append([
+                    f"Build {idx+1}",
+                    f"{row_dict.get('Duration (s)', 'N/A')}",
+                    f"{row_dict.get('Total Anode Weight (g)', 'N/A')}",
+                    f"{row_dict.get('Total Cathode Weight (g)', 'N/A')}",
+                    f"{row_dict.get('Total Calorific Value (kJ)', 'N/A')}"
+                ])
+            
+            values_table = Table(values_table_data, colWidths=[1*inch, 1.2*inch, 1.3*inch, 1.3*inch, 1.4*inch])
+            values_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#2ca02c')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightgreen),
+                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+            ]))
+            story.append(values_table)
+            story.append(Spacer(1, 0.2*inch))
+        
+        # Duration correlation results table
+        dur_corr_data = [['Relationship', 'Correlation', 'P-Value', 'Strength', 'Significance']]
+        
+        for corr_name, corr_info in duration_correlations.items():
+            if corr_name != 'values_table':
+                dur_corr_data.append([
+                    corr_name,
+                    f"{corr_info['correlation']:.3f}",
+                    f"{corr_info['p_value']:.4f}",
+                    f"{corr_info['strength']} ({corr_info['direction']})",
+                    corr_info['significance']
+                ])
+        
+        if len(dur_corr_data) > 1:
+            dur_corr_table = Table(dur_corr_data, colWidths=[2*inch, 0.9*inch, 0.9*inch, 1.2*inch, 1.2*inch])
+            dur_corr_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#ff7f0e')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#ffe4cc')),
+                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+            ]))
+            story.append(dur_corr_table)
+            story.append(Spacer(1, 0.2*inch))
+            
+            story.append(Paragraph("<b>Interpretation:</b>", styles['Normal']))
+            story.append(Spacer(1, 0.05*inch))
+            dur_interp_text = """
+            • Positive correlation: Increasing the construction parameter increases discharge duration<br/>
+            • Negative correlation: Increasing the construction parameter decreases discharge duration<br/>
+            • Strong correlation suggests the parameter significantly influences battery performance
+            """
+            story.append(Paragraph(dur_interp_text, styles['Normal']))
     
     doc.build(story)
     buffer.seek(0)
@@ -2219,8 +2294,10 @@ if len(dataframes) == num_builds and num_builds > 0:
                 
                 # Calculate correlations if we have enough data
                 correlations_for_pdf = None
+                duration_correlations_for_pdf = None
                 if len(all_build_metrics) >= 2:
                     correlations_for_pdf = calculate_correlation_analysis(all_build_metrics, analytics_list_for_pdf)
+                    duration_correlations_for_pdf = calculate_duration_correlations(all_build_metrics, extended_metadata_list_for_pdf)
                 
                 # Generate PDF report
                 pdf_data = generate_pdf_report(
@@ -2231,7 +2308,8 @@ if len(dataframes) == num_builds and num_builds > 0:
                     std_activation_time_ms, std_duration_sec,
                     extended_metadata_list_for_pdf,
                     analytics_list_for_pdf,
-                    correlations_for_pdf
+                    correlations_for_pdf,
+                    duration_correlations_for_pdf
                 )
                 st.download_button(
                     label="📕 PDF",
@@ -2498,8 +2576,16 @@ if len(dataframes) == num_builds and num_builds > 0:
             # Calculate correlations
             correlations = calculate_correlation_analysis(all_metrics_for_corr, all_analytics_for_corr)
             
+            # Calculate duration correlations
+            all_extended_metadata = []
+            for idx in range(num_builds):
+                extended_meta = st.session_state.get('build_metadata_extended', {}).get(idx, {})
+                all_extended_metadata.append(extended_meta)
+            
+            duration_correlations = calculate_duration_correlations(all_metrics_for_corr, all_extended_metadata)
+            
             if correlations:
-                st.success(f"✅ Found {len(correlations)} correlation relationships")
+                st.success(f"✅ Found {len(correlations)} performance-discharge correlation relationships")
                 
                 for corr_name, corr_data in correlations.items():
                     with st.expander(f"📊 {corr_name}", expanded=True):
@@ -2531,13 +2617,64 @@ if len(dataframes) == num_builds and num_builds > 0:
                             else:
                                 st.markdown("- ⚠️ **Not statistically significant**: This relationship may be due to random chance")
             else:
-                st.info("ℹ️ Correlation analysis requires at least 2 builds with extended metadata (weights, calorific value) to be entered.")
-                st.markdown("**To enable correlation analysis:**")
+                st.info("ℹ️ Performance-discharge correlation analysis requires at least 2 builds with extended metadata.")
+            
+            # Duration Correlations Section
+            if duration_correlations:
+                st.markdown("---")
+                st.subheader("⏱️ Duration vs Battery Construction Correlations")
+                st.markdown("*Analyzing how battery construction parameters affect discharge duration*")
+                
+                # Display values table first
+                if 'values_table' in duration_correlations:
+                    st.markdown("**📋 Actual Values Used in Analysis:**")
+                    values_df = pd.DataFrame(duration_correlations['values_table'])
+                    # Convert all columns to strings to avoid PyArrow mixed-type errors
+                    for col in values_df.columns:
+                        values_df[col] = values_df[col].astype(str)
+                    st.dataframe(values_df, use_container_width=True)
+                    st.markdown("")
+                
+                # Display correlation results (excluding values_table key)
+                corr_count = len([k for k in duration_correlations.keys() if k != 'values_table'])
+                if corr_count > 0:
+                    st.success(f"✅ Found {corr_count} duration correlation relationships")
+                    
+                    for corr_name, corr_data in duration_correlations.items():
+                        if corr_name == 'values_table':
+                            continue
+                        
+                        with st.expander(f"📊 {corr_name}", expanded=True):
+                            col1, col2 = st.columns([1, 2])
+                            
+                            with col1:
+                                st.metric("Correlation Coefficient", f"{corr_data['correlation']:.3f}")
+                                st.metric("Strength", corr_data['strength'])
+                                st.metric("Direction", corr_data['direction'])
+                                st.metric("Significance", corr_data['significance'])
+                            
+                            with col2:
+                                st.markdown("**Interpretation:**")
+                                abs_corr = abs(corr_data['correlation'])
+                                if abs_corr > 0.7:
+                                    st.markdown("- **Strong relationship**: Construction parameter strongly influences discharge duration")
+                                elif abs_corr > 0.4:
+                                    st.markdown("- **Moderate relationship**: Construction parameter moderately affects duration")
+                                else:
+                                    st.markdown("- **Weak relationship**: Limited influence on duration")
+                                
+                                if corr_data['p_value'] < 0.05:
+                                    st.markdown("- ✅ **Statistically significant** (p < 0.05)")
+                                else:
+                                    st.markdown("- ⚠️ **Not statistically significant**")
+            else:
+                st.info("ℹ️ Duration correlation analysis requires at least 2 builds with extended metadata (weights, calorific value) to be entered.")
+                st.markdown("**To enable this analysis:**")
                 st.markdown("1. Enter extended build metadata (anode/cathode weights, calorific value) for at least 2 builds")
-                st.markdown("2. The analysis will automatically calculate correlations between:")
-                st.markdown("   - Ampere-seconds per gram vs discharge slope")
-                st.markdown("   - Calorific value vs curve stability")
-                st.markdown("   - Anode vs cathode performance")
+                st.markdown("2. The analysis will calculate correlations between:")
+                st.markdown("   - Duration vs Total Anode Weight")
+                st.markdown("   - Duration vs Total Cathode Weight")
+                st.markdown("   - Duration vs Total Calorific Value")
     
     with tab5:
         st.header("Data Preview")
