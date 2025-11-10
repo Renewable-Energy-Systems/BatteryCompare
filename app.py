@@ -561,58 +561,30 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
             report.append(f"\n{build_name} Performance:")
             report.append("-" * 40)
             
-            passes = 0
-            fails = 0
-            
             # Check each metric
             if std_max_onload_voltage and 'Max On-Load Voltage (V)' in metrics_df.columns:
                 actual = metrics_df.loc[build_name, 'Max On-Load Voltage (V)']
                 if pd.notna(actual):
                     diff = actual - std_max_onload_voltage
-                    status = 'PASS' if actual >= std_max_onload_voltage else 'FAIL'
-                    if status == 'PASS':
-                        passes += 1
-                    else:
-                        fails += 1
-                    report.append(f"  Max On-Load Voltage: {actual:.4f} V (Std: {std_max_onload_voltage} V, Diff: {diff:+.4f} V) - {status}")
+                    report.append(f"  Max On-Load Voltage: {actual:.4f} V (Std: {std_max_onload_voltage} V, Diff: {diff:+.4f} V)")
             
             if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
                 actual = metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)']
                 if pd.notna(actual):
                     diff = actual - std_max_oc_voltage
-                    status = 'PASS' if actual >= std_max_oc_voltage else 'FAIL'
-                    if status == 'PASS':
-                        passes += 1
-                    else:
-                        fails += 1
-                    report.append(f"  Max Open Circuit Voltage: {actual:.4f} V (Std: {std_max_oc_voltage} V, Diff: {diff:+.4f} V) - {status}")
+                    report.append(f"  Max Open Circuit Voltage: {actual:.4f} V (Std: {std_max_oc_voltage} V, Diff: {diff:+.4f} V)")
             
             if std_activation_time and 'Activation Time (min)' in metrics_df.columns:
                 actual = metrics_df.loc[build_name, 'Activation Time (min)']
                 if pd.notna(actual):
                     diff = actual - std_activation_time
-                    status = 'PASS' if actual <= std_activation_time else 'FAIL'
-                    if status == 'PASS':
-                        passes += 1
-                    else:
-                        fails += 1
-                    report.append(f"  Activation Time: {actual:.4f} min (Std: {std_activation_time} min, Diff: {diff:+.4f} min) - {status}")
+                    report.append(f"  Activation Time: {actual:.4f} min (Std: {std_activation_time} min, Diff: {diff:+.4f} min)")
             
             if std_duration and 'Duration (min)' in metrics_df.columns:
                 actual = metrics_df.loc[build_name, 'Duration (min)']
                 if pd.notna(actual):
                     diff = actual - std_duration
-                    status = 'PASS' if actual >= std_duration else 'FAIL'
-                    if status == 'PASS':
-                        passes += 1
-                    else:
-                        fails += 1
-                    report.append(f"  Duration: {actual:.4f} min (Std: {std_duration} min, Diff: {diff:+.4f} min) - {status}")
-            
-            total_tests = passes + fails
-            if total_tests > 0:
-                pass_rate = (passes / total_tests) * 100
-                report.append(f"\n  Overall: {passes}/{total_tests} tests passed ({pass_rate:.1f}%)")
+                    report.append(f"  Duration: {actual:.4f} min (Std: {std_duration} min, Diff: {diff:+.4f} min)")
         
         report.append("")
     
@@ -793,60 +765,38 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         story.append(Paragraph("Performance Comparison vs Standards", heading_style))
         
         for build_name in metrics_df.index:
-            comp_data = [['Metric', 'Actual', 'Standard', 'Difference', 'Status']]
-            passes = 0
-            fails = 0
+            comp_data = [['Metric', 'Actual', 'Standard', 'Difference']]
             
             if std_max_onload_voltage and 'Max On-Load Voltage (V)' in metrics_df.columns:
                 actual = metrics_df.loc[build_name, 'Max On-Load Voltage (V)']
                 if pd.notna(actual):
                     diff = actual - std_max_onload_voltage
-                    status = 'PASS' if actual >= std_max_onload_voltage else 'FAIL'
-                    if status == 'PASS':
-                        passes += 1
-                    else:
-                        fails += 1
-                    comp_data.append(['Max On-Load V', f"{actual:.3f} V", f"{std_max_onload_voltage} V", f"{diff:+.3f} V", status])
+                    comp_data.append(['Max On-Load V', f"{actual:.3f} V", f"{std_max_onload_voltage} V", f"{diff:+.3f} V"])
             
             if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
                 actual = metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)']
                 if pd.notna(actual):
                     diff = actual - std_max_oc_voltage
-                    status = 'PASS' if actual >= std_max_oc_voltage else 'FAIL'
-                    if status == 'PASS':
-                        passes += 1
-                    else:
-                        fails += 1
-                    comp_data.append(['Max OC V', f"{actual:.3f} V", f"{std_max_oc_voltage} V", f"{diff:+.3f} V", status])
+                    comp_data.append(['Max OC V', f"{actual:.3f} V", f"{std_max_oc_voltage} V", f"{diff:+.3f} V"])
             
             if std_activation_time and 'Activation Time (Sec)' in metrics_df.columns:
                 actual = metrics_df.loc[build_name, 'Activation Time (Sec)']
                 if pd.notna(actual):
                     diff_sec = actual - (std_activation_time_ms / 1000 if std_activation_time_ms else std_activation_time * 60)
-                    status = 'PASS' if actual <= (std_activation_time_ms / 1000 if std_activation_time_ms else std_activation_time * 60) else 'FAIL'
-                    if status == 'PASS':
-                        passes += 1
-                    else:
-                        fails += 1
                     std_val = f"{std_activation_time_ms} ms" if std_activation_time_ms else f"{std_activation_time} min"
-                    comp_data.append(['Activation Time', f"{actual:.3f} sec", std_val, f"{diff_sec:+.3f} sec", status])
+                    comp_data.append(['Activation Time', f"{actual:.3f} sec", std_val, f"{diff_sec:+.3f} sec"])
             
             if std_duration and 'Duration (Sec)' in metrics_df.columns:
                 actual = metrics_df.loc[build_name, 'Duration (Sec)']
                 if pd.notna(actual):
                     diff_sec = actual - (std_duration_sec if std_duration_sec else std_duration * 60)
-                    status = 'PASS' if actual >= (std_duration_sec if std_duration_sec else std_duration * 60) else 'FAIL'
-                    if status == 'PASS':
-                        passes += 1
-                    else:
-                        fails += 1
                     std_val = f"{std_duration_sec} sec" if std_duration_sec else f"{std_duration} min"
-                    comp_data.append(['Duration', f"{actual:.3f} sec", std_val, f"{diff_sec:+.3f} sec", status])
+                    comp_data.append(['Duration', f"{actual:.3f} sec", std_val, f"{diff_sec:+.3f} sec"])
             
             story.append(Paragraph(f"<b>{build_name}</b>", styles['Normal']))
             story.append(Spacer(1, 0.1*inch))
             
-            comp_table = Table(comp_data, colWidths=[1.8*inch, 1.2*inch, 1.2*inch, 1.2*inch, 0.8*inch])
+            comp_table = Table(comp_data, colWidths=[1.8*inch, 1.2*inch, 1.2*inch, 1.2*inch])
             comp_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), rl_colors.grey),
                 ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
@@ -857,28 +807,7 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                 ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightgrey),
             ]))
             
-            for i in range(1, len(comp_data)):
-                status = comp_data[i][-1]
-                if status == 'PASS':
-                    comp_table.setStyle(TableStyle([
-                        ('BACKGROUND', (-1, i), (-1, i), rl_colors.lightgreen),
-                        ('TEXTCOLOR', (-1, i), (-1, i), rl_colors.darkgreen),
-                    ]))
-                elif status == 'FAIL':
-                    comp_table.setStyle(TableStyle([
-                        ('BACKGROUND', (-1, i), (-1, i), rl_colors.lightcoral),
-                        ('TEXTCOLOR', (-1, i), (-1, i), rl_colors.darkred),
-                    ]))
-            
             story.append(comp_table)
-            
-            total_tests = passes + fails
-            if total_tests > 0:
-                pass_rate = (passes / total_tests) * 100
-                summary = f"Overall: {passes}/{total_tests} tests passed ({pass_rate:.1f}%)"
-                story.append(Spacer(1, 0.1*inch))
-                story.append(Paragraph(summary, styles['Normal']))
-            
             story.append(Spacer(1, 0.2*inch))
     
     # Extended Build Metadata Section
@@ -2240,44 +2169,36 @@ if len(dataframes) == num_builds and num_builds > 0:
                             actual = metrics_df.loc[build_name, 'Max On-Load Voltage (V)']
                             if pd.notna(actual):
                                 diff = actual - std_max_onload_voltage
-                                status = '✅ Pass' if actual >= std_max_onload_voltage else '❌ Fail'
                                 build_data['Max On-Load V (Actual)'] = actual
                                 build_data['Max On-Load V (Std)'] = std_max_onload_voltage
                                 build_data['Max On-Load V (Diff)'] = diff
-                                build_data['Max On-Load V (Status)'] = status
                         
                         # Max Open Circuit Voltage comparison
                         if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
                             actual = metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)']
                             if pd.notna(actual):
                                 diff = actual - std_max_oc_voltage
-                                status = '✅ Pass' if actual >= std_max_oc_voltage else '❌ Fail'
                                 build_data['Max OC V (Actual)'] = actual
                                 build_data['Max OC V (Std)'] = std_max_oc_voltage
                                 build_data['Max OC V (Diff)'] = diff
-                                build_data['Max OC V (Status)'] = status
                         
-                        # Activation Time comparison (lower is better, so pass if <= standard)
+                        # Activation Time comparison
                         if std_activation_time and 'Activation Time (min)' in metrics_df.columns:
                             actual = metrics_df.loc[build_name, 'Activation Time (min)']
                             if pd.notna(actual):
                                 diff = actual - std_activation_time
-                                status = '✅ Pass' if actual <= std_activation_time else '❌ Fail'
                                 build_data['Activation Time (Actual)'] = actual
                                 build_data['Activation Time (Std)'] = std_activation_time
                                 build_data['Activation Time (Diff)'] = diff
-                                build_data['Activation Time (Status)'] = status
                         
-                        # Duration comparison (higher is better, so pass if >= standard)
+                        # Duration comparison
                         if std_duration and 'Duration (min)' in metrics_df.columns:
                             actual = metrics_df.loc[build_name, 'Duration (min)']
                             if pd.notna(actual):
                                 diff = actual - std_duration
-                                status = '✅ Pass' if actual >= std_duration else '❌ Fail'
                                 build_data['Duration (Actual)'] = actual
                                 build_data['Duration (Std)'] = std_duration
                                 build_data['Duration (Diff)'] = diff
-                                build_data['Duration (Status)'] = status
                         
                         standard_comparison_data.append(build_data)
                     
@@ -2287,29 +2208,10 @@ if len(dataframes) == num_builds and num_builds > 0:
                         # Format numeric columns
                         format_dict = {}
                         for col in std_comp_df.columns:
-                            if col not in ['Build'] and '(Status)' not in col:
+                            if col not in ['Build']:
                                 format_dict[col] = '{:.4f}'
                         
                         st.dataframe(std_comp_df.style.format(format_dict), use_container_width=True)
-                        
-                        # Overall pass/fail summary
-                        st.markdown("### 📊 Overall Performance Summary")
-                        for build_name in metrics_df.index:
-                            status_cols = [col for col in std_comp_df.columns if '(Status)' in col]
-                            build_row = std_comp_df[std_comp_df['Build'] == build_name].iloc[0]
-                            
-                            passes = sum(1 for col in status_cols if col in build_row and '✅' in str(build_row[col]))
-                            fails = sum(1 for col in status_cols if col in build_row and '❌' in str(build_row[col]))
-                            total_tests = passes + fails
-                            
-                            if total_tests > 0:
-                                pass_rate = (passes / total_tests) * 100
-                                if pass_rate == 100:
-                                    st.success(f"**{build_name}**: {passes}/{total_tests} tests passed ({pass_rate:.0f}%) ✅")
-                                elif pass_rate >= 50:
-                                    st.warning(f"**{build_name}**: {passes}/{total_tests} tests passed ({pass_rate:.0f}%)")
-                                else:
-                                    st.error(f"**{build_name}**: {passes}/{total_tests} tests passed ({pass_rate:.0f}%) ❌")
     
     with tab4:
         st.header("Advanced Analytics & Anomaly Detection")

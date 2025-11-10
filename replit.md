@@ -50,8 +50,7 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 
 **Standard Performance Benchmarks**:
 - Optional comparison against target performance levels
-- Pass/fail status for each metric with visual indicators
-- Overall performance summary showing percentage of tests passed
+- Shows actual values, standard values, and differences for each metric
 - Configurable standard values for metrics:
   - Max On-Load Voltage: Optional (can be NULL via checkbox)
   - Max Open Circuit Voltage: Required when benchmarks enabled
@@ -61,10 +60,10 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 **Detailed Reporting**:
 - Comprehensive text report generation with all test data
 - Includes: test configuration, build information, performance metrics, statistical summary
-- Standard benchmark comparisons with pass/fail status
+- Standard benchmark comparisons showing actual vs standard values with differences
 - Build-to-build comparisons with differences and percentage changes
 - Downloadable in multiple formats: Excel, CSV, formatted text report, and **PDF**
-- **PDF Reports**: Professional formatted reports with tables, color-coded pass/fail status, build information, and performance comparisons
+- **PDF Reports**: Professional formatted reports with tables, build information, and performance comparisons
 
 ## Current Use Case
 
