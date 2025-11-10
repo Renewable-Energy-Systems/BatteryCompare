@@ -420,7 +420,8 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                     
                     # Create a mask that excludes intervals starting before activation
                     # (both current and previous sample must be in discharge period)
-                    discharge_mask_prev = discharge_mask.shift(1, fill_value=False)
+                    # Shift discharge_mask by 1 position (prepend False, drop last)
+                    discharge_mask_prev = np.concatenate([[False], discharge_mask[:-1]])
                     valid_discharge_intervals = discharge_mask & discharge_mask_prev
                     
                     # Total ampere-seconds = sum of (current * time_diff) during discharge only
