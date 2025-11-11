@@ -1938,6 +1938,10 @@ if data_mode == "Upload Files":
                     help="Calorific value per gram in kJ/g"
                 )
                 
+                # Calculate total stack weight correctly:
+                # Total stack weight = (sum of all per-cell weights) × cells_in_series
+                total_stack_weight = (anode_weight + cathode_weight + heat_pellet_weight + electrolyte_weight) * cells_in_series if cells_in_series > 0 else 0
+                
                 st.session_state['build_metadata_extended'][i] = {
                     'anode_weight_per_cell': anode_weight,
                     'cathode_weight_per_cell': cathode_weight,
@@ -1948,8 +1952,8 @@ if data_mode == "Upload Files":
                     'calorific_value_per_gram': calorific_value,
                     'total_anode_weight': anode_weight * cells_in_series if anode_weight > 0 else 0,
                     'total_cathode_weight': cathode_weight * cells_in_series if cathode_weight > 0 else 0,
-                    'total_stack_weight': (anode_weight + cathode_weight) * cells_in_series + heat_pellet_weight + electrolyte_weight if (anode_weight + cathode_weight) > 0 else 0,
-                    'total_calorific_value': calorific_value * ((anode_weight + cathode_weight) * cells_in_series + heat_pellet_weight + electrolyte_weight) if calorific_value > 0 else 0
+                    'total_stack_weight': total_stack_weight,
+                    'total_calorific_value': calorific_value * total_stack_weight if calorific_value > 0 and total_stack_weight > 0 else 0
                 }
             
             if uploaded_file:
@@ -2481,7 +2485,8 @@ if len(dataframes) == num_builds and num_builds > 0:
                     
                     st.dataframe(analytics_df.style.format(format_value), use_container_width=True)
                 else:
-                    st.info("Not enough data for advanced analytics")
+                    st.warning(f"⚠️ Unable to calculate discharge curve metrics for {name}")
+                    st.info("Possible reasons: insufficient data points, invalid time/voltage columns, or data quality issues.")
             
             with col2:
                 st.markdown("#### Key Insights")
