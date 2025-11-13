@@ -50,6 +50,19 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 - **Database Schema Updates**:
   - Added `battery_type` column to SavedComparison table for filtering saved analyses by battery chemistry
   - Added `extended_metadata_json` column for persisting build construction details
+  - Added `password_hash` column for optional password protection of saved comparisons
+
+**Password Protection for Saved Comparisons** (Nov 13, 2025):
+- **Optional Per-Comparison Protection**: Users can optionally password-protect individual saved comparisons
+- **Security Implementation**:
+  - **Argon2id Hashing**: Industry-standard password hashing algorithm (2025 best practice)
+  - **Salt & Memory-Hard**: Automatic salting and memory-hard hashing to resist brute-force attacks
+  - **Secure Storage**: Only hash stored in database (VARCHAR(128)), never plaintext password
+- **Automated Migration**: Cross-database safe schema migration runs on startup to add password_hash column
+- **No Password Recovery**: Forgotten password = permanent loss of access to comparison (by design for security)
+- **Mixed Access**: Unprotected comparisons remain accessible without password, protected ones require correct password
+- **Backend Complete**: Argon2 hashing, database schema, save/load verification all implemented and architect-approved
+- **UI Integration Pending**: Password input fields, lock icons, warning text to be added in task 19
 
 **Battery Type Organization** (Nov 2025):
 - Battery type selector at app start (General, Madhava, Low-Voltage, High-Voltage, Custom)
