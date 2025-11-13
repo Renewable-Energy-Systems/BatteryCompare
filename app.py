@@ -602,7 +602,7 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
     report.append("")
     
     # Standard Performance Comparison
-    if use_standards and any([std_max_onload_voltage, std_max_oc_voltage, std_activation_time, std_duration]):
+    if use_standards and any([std_max_onload_voltage, std_max_oc_voltage, std_activation_time_ms, std_duration_sec]):
         report.append("-" * 80)
         report.append("STANDARD PERFORMANCE BENCHMARKS COMPARISON")
         report.append("-" * 80)
@@ -611,18 +611,11 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
             report.append(f"  Max On-Load Voltage: {std_max_onload_voltage} V")
         if std_max_oc_voltage:
             report.append(f"  Max Open Circuit Voltage: {std_max_oc_voltage} V")
-        if std_activation_time:
-            # Display in ms if provided, otherwise show in minutes
-            if std_activation_time_ms:
-                report.append(f"  Max Activation Time: {std_activation_time_ms} ms ({std_activation_time:.4f} min)")
-            else:
-                report.append(f"  Max Activation Time: {std_activation_time} min")
-        if std_duration:
-            # Display in seconds if provided, otherwise show in minutes
-            if std_duration_sec:
-                report.append(f"  Min Duration: {std_duration_sec} s ({std_duration:.4f} min)")
-            else:
-                report.append(f"  Min Duration: {std_duration} min")
+        if std_activation_time_ms:
+            std_activation_sec = std_activation_time_ms / 1000.0
+            report.append(f"  Max Activation Time: {std_activation_time_ms} ms ({std_activation_sec:.2f} s)")
+        if std_duration_sec:
+            report.append(f"  Min Duration: {std_duration_sec} s")
         report.append("")
         
         for build_name in metrics_df.index:
@@ -642,17 +635,18 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
                     diff = actual - std_max_oc_voltage
                     report.append(f"  Max Open Circuit Voltage: {actual:.4f} V (Std: {std_max_oc_voltage} V, Diff: {diff:+.4f} V)")
             
-            if std_activation_time and 'Activation Time (min)' in metrics_df.columns:
-                actual = metrics_df.loc[build_name, 'Activation Time (min)']
-                if pd.notna(actual):
-                    diff = actual - std_activation_time
-                    report.append(f"  Activation Time: {actual:.4f} min (Std: {std_activation_time} min, Diff: {diff:+.4f} min)")
+            if std_activation_time_ms and 'Activation Time (Sec)' in metrics_df.columns:
+                actual_sec = metrics_df.loc[build_name, 'Activation Time (Sec)']
+                if pd.notna(actual_sec):
+                    std_sec = std_activation_time_ms / 1000.0  # Convert ms to seconds
+                    diff = actual_sec - std_sec
+                    report.append(f"  Activation Time: {actual_sec:.2f} s (Std: {std_activation_time_ms} ms = {std_sec:.2f} s, Diff: {diff:+.2f} s)")
             
-            if std_duration and 'Duration (min)' in metrics_df.columns:
-                actual = metrics_df.loc[build_name, 'Duration (min)']
-                if pd.notna(actual):
-                    diff = actual - std_duration
-                    report.append(f"  Duration: {actual:.4f} min (Std: {std_duration} min, Diff: {diff:+.4f} min)")
+            if std_duration_sec and 'Duration (Sec)' in metrics_df.columns:
+                actual_sec = metrics_df.loc[build_name, 'Duration (Sec)']
+                if pd.notna(actual_sec):
+                    diff = actual_sec - std_duration_sec
+                    report.append(f"  Duration: {actual_sec:.2f} s (Std: {std_duration_sec} s, Diff: {diff:+.2f} s)")
         
         report.append("")
     
@@ -803,7 +797,7 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         story.append(metrics_table)
         story.append(Spacer(1, 0.3*inch))
     
-    if use_standards and any([std_max_onload_voltage, std_max_oc_voltage, std_activation_time, std_duration]):
+    if use_standards and any([std_max_onload_voltage, std_max_oc_voltage, std_activation_time_ms, std_duration_sec]):
         story.append(PageBreak())
         story.append(Paragraph("Standard Performance Benchmarks", heading_style))
         
@@ -813,9 +807,10 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         if std_max_oc_voltage:
             std_data.append(['Max Open Circuit Voltage', f"{std_max_oc_voltage} V"])
         if std_activation_time_ms:
-            std_data.append(['Max Activation Time', f"{std_activation_time_ms} ms ({std_activation_time:.4f} min)"])
+            std_activation_sec = std_activation_time_ms / 1000.0
+            std_data.append(['Max Activation Time', f"{std_activation_time_ms} ms ({std_activation_sec:.2f} s)"])
         if std_duration_sec:
-            std_data.append(['Min Duration', f"{std_duration_sec} s ({std_duration:.4f} min)"])
+            std_data.append(['Min Duration', f"{std_duration_sec} s"])
         
         std_table = Table(std_data, colWidths=[3*inch, 3*inch])
         std_table.setStyle(TableStyle([
@@ -2198,8 +2193,8 @@ if len(dataframes) == num_builds and num_builds > 0:
                     'Build': metrics['Build'],
                     'Max On-Load V': metrics.get('Max On-Load Voltage (V)', 'N/A'),
                     'Max OC V': metrics.get('Max Open Circuit Voltage (V)', 'N/A'),
-                    'Activation Time (min)': metrics.get('Activation Time (min)', 'N/A'),
-                    'Duration (min)': metrics.get('Duration (min)', 'N/A')
+                    'Activation Time (s)': metrics.get('Activation Time (Sec)', 'N/A'),
+                    'Duration (s)': metrics.get('Duration (Sec)', 'N/A')
                 }
                 metrics_summary.append(summary)
             
@@ -2462,7 +2457,7 @@ if len(dataframes) == num_builds and num_builds > 0:
                     }), use_container_width=True)
                 
                 # Standard Performance Comparison
-                if use_standards and any([std_max_onload_voltage, std_max_oc_voltage, std_activation_time, std_duration]):
+                if use_standards and any([std_max_onload_voltage, std_max_oc_voltage, std_activation_time_ms, std_duration_sec]):
                     st.subheader("⭐ Performance vs. Standard Benchmarks")
                     st.markdown("Compare each build against specified standard performance levels")
                     
@@ -2489,23 +2484,24 @@ if len(dataframes) == num_builds and num_builds > 0:
                                 build_data['Max OC V (Std)'] = std_max_oc_voltage
                                 build_data['Max OC V (Diff)'] = diff
                         
-                        # Activation Time comparison
-                        if std_activation_time and 'Activation Time (min)' in metrics_df.columns:
-                            actual = metrics_df.loc[build_name, 'Activation Time (min)']
-                            if pd.notna(actual):
-                                diff = actual - std_activation_time
-                                build_data['Activation Time (Actual)'] = actual
-                                build_data['Activation Time (Std)'] = std_activation_time
-                                build_data['Activation Time (Diff)'] = diff
+                        # Activation Time comparison (in seconds)
+                        if std_activation_time_ms and 'Activation Time (Sec)' in metrics_df.columns:
+                            actual_sec = metrics_df.loc[build_name, 'Activation Time (Sec)']
+                            if pd.notna(actual_sec):
+                                std_sec = std_activation_time_ms / 1000.0  # Convert ms to seconds
+                                diff = actual_sec - std_sec
+                                build_data['Activation Time (Actual s)'] = actual_sec
+                                build_data['Activation Time (Std s)'] = std_sec
+                                build_data['Activation Time (Diff s)'] = diff
                         
-                        # Duration comparison
-                        if std_duration and 'Duration (min)' in metrics_df.columns:
-                            actual = metrics_df.loc[build_name, 'Duration (min)']
-                            if pd.notna(actual):
-                                diff = actual - std_duration
-                                build_data['Duration (Actual)'] = actual
-                                build_data['Duration (Std)'] = std_duration
-                                build_data['Duration (Diff)'] = diff
+                        # Duration comparison (in seconds)
+                        if std_duration_sec and 'Duration (Sec)' in metrics_df.columns:
+                            actual_sec = metrics_df.loc[build_name, 'Duration (Sec)']
+                            if pd.notna(actual_sec):
+                                diff = actual_sec - std_duration_sec
+                                build_data['Duration (Actual s)'] = actual_sec
+                                build_data['Duration (Std s)'] = std_duration_sec
+                                build_data['Duration (Diff s)'] = diff
                         
                         standard_comparison_data.append(build_data)
                     
