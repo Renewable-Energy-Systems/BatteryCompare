@@ -8,7 +8,7 @@ from scipy import stats
 import io
 from datetime import datetime
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, text, inspect
 from sqlalchemy.orm import declarative_base, sessionmaker
 import json
 from reportlab.lib import colors as rl_colors
@@ -17,6 +17,8 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
@@ -34,14 +36,31 @@ class SavedComparison(Base):
     metrics_json = Column(Text)
     battery_type = Column(String(100), nullable=True)  # New: battery type (General, Madhava, etc.)
     extended_metadata_json = Column(Text, nullable=True)  # New: extended build metadata (weights, calorific value, etc.)
+    password_hash = Column(String(128), nullable=True)  # Optional password protection
 
 if DATABASE_URL:
     engine = create_engine(DATABASE_URL)
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
+    
+    # Run migration to add password_hash column if it doesn't exist
+    try:
+        inspector = inspect(engine)
+        if 'saved_comparisons' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('saved_comparisons')]
+            if 'password_hash' not in columns:
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE saved_comparisons ADD COLUMN password_hash VARCHAR(128)"))
+                    conn.commit()
+    except Exception as e:
+        # Migration error - log but continue to allow app to run
+        pass
 else:
     engine = None
     Session = None
+
+# Initialize password hasher for secure password storage
+ph = PasswordHasher()
 
 st.set_page_config(page_title="Battery Discharge Analysis", layout="wide")
 
@@ -1582,8 +1601,8 @@ def detect_anomalies(df, voltage_col, time_col=None):
     
     return anomalies, all_anomaly_indices
 
-def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_type=None, extended_metadata=None):
-    """Save comparison to database with battery type and extended metadata"""
+def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_type=None, extended_metadata=None, password=None):
+    """Save comparison to database with optional password protection"""
     if not Session:
         return False, "Database not configured"
     
@@ -1597,6 +1616,15 @@ def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_typ
         metrics_json = metrics_df.to_json(orient='split') if metrics_df is not None else None
         extended_metadata_json = json.dumps(extended_metadata) if extended_metadata else None
         
+        # Hash password if provided
+        password_hash = None
+        if password and password.strip():
+            try:
+                password_hash = ph.hash(password.strip())
+            except Exception as e:
+                session.close()
+                return False, f"Error hashing password: {str(e)}"
+        
         comparison = SavedComparison(
             name=name,
             num_builds=len(build_names),
@@ -1604,19 +1632,21 @@ def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_typ
             data_json=json.dumps(data_list),
             metrics_json=metrics_json,
             battery_type=battery_type,
-            extended_metadata_json=extended_metadata_json
+            extended_metadata_json=extended_metadata_json,
+            password_hash=password_hash
         )
         
         session.add(comparison)
         session.commit()
         session.close()
         
-        return True, "Comparison saved successfully"
+        protection_msg = " (password protected)" if password_hash else ""
+        return True, f"Comparison saved successfully{protection_msg}"
     except Exception as e:
         return False, f"Error saving comparison: {str(e)}"
 
-def load_comparison_from_db(comparison_id):
-    """Load comparison from database with battery type and extended metadata"""
+def load_comparison_from_db(comparison_id, password=None):
+    """Load comparison from database with optional password verification"""
     if not Session:
         return None, None, None, None, None, "Database not configured"
     
@@ -1627,6 +1657,21 @@ def load_comparison_from_db(comparison_id):
         if not comparison:
             session.close()
             return None, None, None, None, None, "Comparison not found"
+        
+        # Check password if comparison is protected
+        if comparison.password_hash:
+            if not password or not password.strip():
+                session.close()
+                return None, None, None, None, None, "Password required for this comparison"
+            
+            try:
+                ph.verify(comparison.password_hash, password.strip())
+            except VerifyMismatchError:
+                session.close()
+                return None, None, None, None, None, "Incorrect password"
+            except Exception as e:
+                session.close()
+                return None, None, None, None, None, f"Error verifying password: {str(e)}"
         
         build_names = json.loads(comparison.build_names)
         data_list = json.loads(comparison.data_json)
@@ -1650,7 +1695,7 @@ def load_comparison_from_db(comparison_id):
         return None, None, None, None, None, f"Error loading comparison: {str(e)}"
 
 def get_all_saved_comparisons():
-    """Get list of all saved comparisons"""
+    """Get list of all saved comparisons with password protection status"""
     if not Session:
         return []
     
@@ -1664,7 +1709,8 @@ def get_all_saved_comparisons():
                 'id': comp.id,
                 'name': comp.name,
                 'created_at': comp.created_at,
-                'num_builds': comp.num_builds
+                'num_builds': comp.num_builds,
+                'is_protected': comp.password_hash is not None
             })
         
         session.close()
