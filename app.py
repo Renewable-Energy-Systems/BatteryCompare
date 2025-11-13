@@ -1645,6 +1645,67 @@ def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_typ
     except Exception as e:
         return False, f"Error saving comparison: {str(e)}"
 
+def update_comparison_in_db(comparison_id, name, dataframes, build_names, metrics_df, battery_type=None, extended_metadata=None, existing_password=None, new_password=None):
+    """Update existing comparison in database with password verification"""
+    if not Session:
+        return False, "Database not configured"
+    
+    try:
+        session = Session()
+        comparison = session.query(SavedComparison).filter_by(id=comparison_id).first()
+        
+        if not comparison:
+            session.close()
+            return False, "Comparison not found"
+        
+        # Verify existing password if comparison is protected
+        if comparison.password_hash:
+            if not existing_password or not existing_password.strip():
+                session.close()
+                return False, "Password required to update this protected comparison"
+            
+            try:
+                ph.verify(comparison.password_hash, existing_password.strip())
+            except VerifyMismatchError:
+                session.close()
+                return False, "Incorrect password"
+            except Exception as e:
+                session.close()
+                return False, f"Error verifying password: {str(e)}"
+        
+        # Prepare data
+        data_list = []
+        for df in dataframes:
+            data_list.append(df.to_json(orient='split'))
+        
+        metrics_json = metrics_df.to_json(orient='split') if metrics_df is not None else None
+        extended_metadata_json = json.dumps(extended_metadata) if extended_metadata else None
+        
+        # Update comparison fields
+        comparison.name = name
+        comparison.num_builds = len(build_names)
+        comparison.build_names = json.dumps(build_names)
+        comparison.data_json = json.dumps(data_list)
+        comparison.metrics_json = metrics_json
+        comparison.battery_type = battery_type
+        comparison.extended_metadata_json = extended_metadata_json
+        
+        # Update password if new one provided
+        if new_password and new_password.strip():
+            try:
+                comparison.password_hash = ph.hash(new_password.strip())
+            except Exception as e:
+                session.close()
+                return False, f"Error hashing new password: {str(e)}"
+        
+        session.commit()
+        session.close()
+        
+        protection_msg = " (password protected)" if comparison.password_hash else ""
+        return True, f"Comparison updated successfully{protection_msg}"
+    except Exception as e:
+        return False, f"Error updating comparison: {str(e)}"
+
 def load_comparison_from_db(comparison_id, password=None):
     """Load comparison from database with optional password verification"""
     if not Session:
