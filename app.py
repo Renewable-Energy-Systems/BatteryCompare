@@ -2178,12 +2178,22 @@ if len(dataframes) == num_builds and num_builds > 0:
                     st.markdown(f"### {metrics['Build']}")
                     if 'Max On-Load Voltage (V)' in metrics and metrics['Max On-Load Voltage (V)'] is not None:
                         st.metric("Max On-Load V", f"{metrics['Max On-Load Voltage (V)']:.3f} V")
+                    if 'Max On-Load Current (A)' in metrics and metrics['Max On-Load Current (A)'] is not None:
+                        st.metric("Max On-Load Current", f"{metrics['Max On-Load Current (A)']:.3f} A")
+                    if 'Max On-Load Time (s)' in metrics and metrics['Max On-Load Time (s)'] is not None:
+                        st.metric("Max On-Load Time", f"{metrics['Max On-Load Time (s)']:.2f} s")
                     if 'Max Open Circuit Voltage (V)' in metrics and metrics['Max Open Circuit Voltage (V)'] is not None:
                         st.metric("Max OC V", f"{metrics['Max Open Circuit Voltage (V)']:.3f} V")
+                    if 'Max OC Voltage Time (s)' in metrics and metrics['Max OC Voltage Time (s)'] is not None:
+                        st.metric("Max OC Time", f"{metrics['Max OC Voltage Time (s)']:.2f} s")
+                    if 'Weighted Average Voltage (V)' in metrics and metrics['Weighted Average Voltage (V)'] is not None:
+                        st.metric("Weighted Avg V", f"{metrics['Weighted Average Voltage (V)']:.3f} V")
                     if 'Activation Time (Sec)' in metrics and metrics['Activation Time (Sec)'] is not None:
-                        st.metric("Activation Time", f"{metrics['Activation Time (Sec)']:.2f} sec")
+                        st.metric("Activation Time", f"{metrics['Activation Time (Sec)']:.2f} s")
                     if 'Duration (Sec)' in metrics and metrics['Duration (Sec)'] is not None:
-                        st.metric("Duration", f"{metrics['Duration (Sec)']:.2f} sec")
+                        st.metric("Duration", f"{metrics['Duration (Sec)']:.2f} s")
+                    if 'Voltage at Targeted Duration (V)' in metrics and metrics['Voltage at Targeted Duration (V)'] is not None:
+                        st.metric("V at Target Duration", f"{metrics['Voltage at Targeted Duration (V)']:.3f} V")
         else:
             # For many builds, use a table
             st.subheader("📊 Key Performance Metrics")
@@ -2192,10 +2202,16 @@ if len(dataframes) == num_builds and num_builds > 0:
                 summary = {
                     'Build': metrics['Build'],
                     'Max On-Load V': metrics.get('Max On-Load Voltage (V)', 'N/A'),
+                    'Max On-Load I (A)': metrics.get('Max On-Load Current (A)', 'N/A'),
+                    'Max On-Load Time (s)': metrics.get('Max On-Load Time (s)', 'N/A'),
                     'Max OC V': metrics.get('Max Open Circuit Voltage (V)', 'N/A'),
+                    'Max OC Time (s)': metrics.get('Max OC Voltage Time (s)', 'N/A'),
+                    'Weighted Avg V': metrics.get('Weighted Average Voltage (V)', 'N/A'),
                     'Activation Time (s)': metrics.get('Activation Time (Sec)', 'N/A'),
                     'Duration (s)': metrics.get('Duration (Sec)', 'N/A')
                 }
+                if 'Voltage at Targeted Duration (V)' in metrics and metrics['Voltage at Targeted Duration (V)'] is not None:
+                    summary['V at Target Duration'] = metrics.get('Voltage at Targeted Duration (V)', 'N/A')
                 metrics_summary.append(summary)
             
             summary_df = pd.DataFrame(metrics_summary)
@@ -2745,11 +2761,10 @@ if len(dataframes) == num_builds and num_builds > 0:
                 'Battery Code': battery_code if battery_code else 'N/A',
                 'Build ID': build_id if build_id else 'N/A',
                 'Temperature (°C)': temp if temp is not None else 'Not specified',
-                'Total Time (min)': metrics.get('Total Time (min)', 0),
-                'Voltage Range (V)': metrics.get('Voltage Range (V)', 0),
+                'Duration (s)': metrics.get('Duration (Sec)', 0),
+                'Weighted Avg V': metrics.get('Weighted Average Voltage (V)', 0),
                 'Avg Degradation (mV/min)': advanced.get('Average Degradation Rate (mV/min)', 0),
                 'Voltage Retention (%)': advanced.get('Voltage Retention (%)', 0),
-                'Total Energy (Wh)': advanced.get('Total Energy Discharged (Wh)', metrics.get('Total Energy (Wh)', 0)),
             })
         
         if temp_data:
@@ -2776,15 +2791,15 @@ if len(dataframes) == num_builds and num_builds > 0:
                         fig1 = go.Figure()
                         fig1.add_trace(go.Scatter(
                             x=numeric_temp_df['Temperature (°C)'],
-                            y=numeric_temp_df['Total Time (min)'],
+                            y=numeric_temp_df['Duration (s)'],
                             mode='lines+markers',
-                            name='Discharge Time',
+                            name='Discharge Duration',
                             marker=dict(size=10)
                         ))
                         fig1.update_layout(
-                            title='Discharge Time vs Temperature',
+                            title='Discharge Duration vs Temperature',
                             xaxis_title='Temperature (°C)',
-                            yaxis_title='Total Discharge Time (min)',
+                            yaxis_title='Discharge Duration (s)',
                             height=400
                         )
                         st.plotly_chart(fig1, use_container_width=True)
@@ -2793,15 +2808,15 @@ if len(dataframes) == num_builds and num_builds > 0:
                         fig2 = go.Figure()
                         fig2.add_trace(go.Scatter(
                             x=numeric_temp_df['Temperature (°C)'],
-                            y=numeric_temp_df['Total Energy (Wh)'],
+                            y=numeric_temp_df['Weighted Avg V'],
                             mode='lines+markers',
-                            name='Energy',
+                            name='Weighted Avg Voltage',
                             marker=dict(size=10, color='orange')
                         ))
                         fig2.update_layout(
-                            title='Energy Output vs Temperature',
+                            title='Weighted Average Voltage vs Temperature',
                             xaxis_title='Temperature (°C)',
-                            yaxis_title='Total Energy (Wh)',
+                            yaxis_title='Weighted Average Voltage (V)',
                             height=400
                         )
                         st.plotly_chart(fig2, use_container_width=True)
@@ -2824,30 +2839,30 @@ if len(dataframes) == num_builds and num_builds > 0:
                     st.plotly_chart(fig3, use_container_width=True)
                     
                     st.subheader("Temperature Performance Summary")
-                    best_temp_idx = numeric_temp_df['Total Energy (Wh)'].idxmax()
-                    worst_temp_idx = numeric_temp_df['Total Energy (Wh)'].idxmin()
+                    best_temp_idx = numeric_temp_df['Duration (s)'].idxmax()
+                    worst_temp_idx = numeric_temp_df['Duration (s)'].idxmin()
                     
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.metric(
                             "Best Performance Temperature",
                             f"{numeric_temp_df.loc[best_temp_idx, 'Temperature (°C)']}°C",
-                            f"{numeric_temp_df.loc[best_temp_idx, 'Total Energy (Wh)']:.2f} Wh"
+                            f"{numeric_temp_df.loc[best_temp_idx, 'Duration (s)']:.2f} s"
                         )
                     with col2:
                         st.metric(
                             "Worst Performance Temperature",
                             f"{numeric_temp_df.loc[worst_temp_idx, 'Temperature (°C)']}°C",
-                            f"{numeric_temp_df.loc[worst_temp_idx, 'Total Energy (Wh)']:.2f} Wh"
+                            f"{numeric_temp_df.loc[worst_temp_idx, 'Duration (s)']:.2f} s"
                         )
                     with col3:
-                        energy_range = numeric_temp_df['Total Energy (Wh)'].max() - numeric_temp_df['Total Energy (Wh)'].min()
-                        avg_energy = numeric_temp_df['Total Energy (Wh)'].mean()
-                        pct_variation = (energy_range / avg_energy * 100) if avg_energy > 0 else 0
+                        duration_range = numeric_temp_df['Duration (s)'].max() - numeric_temp_df['Duration (s)'].min()
+                        avg_duration = numeric_temp_df['Duration (s)'].mean()
+                        pct_variation = (duration_range / avg_duration * 100) if avg_duration > 0 else 0
                         st.metric(
-                            "Energy Variation",
+                            "Duration Variation",
                             f"{pct_variation:.1f}%",
-                            f"Range: {energy_range:.2f} Wh"
+                            f"Range: {duration_range:.2f} s"
                         )
             else:
                 st.warning("⚠️ No temperature information detected in build names.")
