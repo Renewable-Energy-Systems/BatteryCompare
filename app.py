@@ -244,7 +244,7 @@ def downsample_for_plotting(df, max_points=10000):
     
     return df.iloc[indices].copy()
 
-def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activation_voltage=1.0, extended_metadata=None):
+def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activation_voltage=1.0, extended_metadata=None, target_duration_sec=None):
     """Calculate key battery metrics including new performance metrics
     
     Args:
@@ -254,34 +254,50 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
         current_col: Name of current column
         min_activation_voltage: Minimum voltage threshold for activation
         extended_metadata: Dict with extended build metadata (weights, calorific value, etc.)
+        target_duration_sec: Optional target duration in seconds for voltage lookup
     """
     metrics = {}
     
     if voltage_col and voltage_col in df.columns:
         metrics['Max Voltage (V)'] = float(df[voltage_col].max())
-        metrics['Min Voltage (V)'] = float(df[voltage_col].min())
-        metrics['Average Voltage (V)'] = float(df[voltage_col].mean())
-        metrics['Voltage Range (V)'] = metrics['Max Voltage (V)'] - metrics['Min Voltage (V)']
+        # Min Voltage and Voltage Range removed per user request
         
-        # Calculate max open circuit voltage and max on-load voltage
+        # Calculate max open circuit voltage and max on-load voltage WITH metadata
         if current_col and current_col in df.columns:
             # Open circuit: when current is 0 or very close to 0 (< 0.01A)
             open_circuit_mask = df[current_col].abs() < 0.01
             on_load_mask = df[current_col].abs() >= 0.01
             
             if open_circuit_mask.any():
-                metrics['Max Open Circuit Voltage (V)'] = float(df.loc[open_circuit_mask, voltage_col].max())
+                oc_idx = df.loc[open_circuit_mask, voltage_col].idxmax()
+                metrics['Max Open Circuit Voltage (V)'] = float(df.loc[oc_idx, voltage_col])
+                # Add timestamp when max OC voltage occurred
+                if time_col and time_col in df.columns:
+                    metrics['Max OC Voltage Time (s)'] = None  # Will be filled later when time is converted
             else:
                 metrics['Max Open Circuit Voltage (V)'] = None
+                metrics['Max OC Voltage Time (s)'] = None
             
             if on_load_mask.any():
-                metrics['Max On-Load Voltage (V)'] = float(df.loc[on_load_mask, voltage_col].max())
+                onload_idx = df.loc[on_load_mask, voltage_col].idxmax()
+                metrics['Max On-Load Voltage (V)'] = float(df.loc[onload_idx, voltage_col])
+                # Add current at that time
+                metrics['Max On-Load Current (A)'] = float(df.loc[onload_idx, current_col])
+                # Add timestamp when max on-load voltage occurred
+                if time_col and time_col in df.columns:
+                    metrics['Max On-Load Time (s)'] = None  # Will be filled later when time is converted
             else:
                 metrics['Max On-Load Voltage (V)'] = None
+                metrics['Max On-Load Current (A)'] = None
+                metrics['Max On-Load Time (s)'] = None
         else:
             # If no current column, assume all measurements are on-load
-            metrics['Max On-Load Voltage (V)'] = float(df[voltage_col].max())
+            onload_idx = df[voltage_col].idxmax()
+            metrics['Max On-Load Voltage (V)'] = float(df.loc[onload_idx, voltage_col])
+            metrics['Max On-Load Current (A)'] = None
+            metrics['Max On-Load Time (s)'] = None
             metrics['Max Open Circuit Voltage (V)'] = None
+            metrics['Max OC Voltage Time (s)'] = None
     
     if current_col and current_col in df.columns:
         metrics['Max Current (A)'] = float(df[current_col].max())
@@ -319,7 +335,7 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
             except:
                 time_range_minutes = 0
         
-        metrics['Total Time (min)'] = time_range_minutes
+        metrics['Total Time (s)'] = time_range_minutes * 60
         
         # Calculate activation time and duration
         # Activation Time (Sec): The time when battery FIRST reaches >= min_activation_voltage
@@ -355,35 +371,73 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                 metrics['Activation Time (Sec)'] = float(activation_time_sec)
                 metrics['Duration (Sec)'] = float(duration_sec)
                 
-                # Also keep minutes versions for backward compatibility
-                metrics['Activation Time (min)'] = float(activation_time_sec / 60)
-                metrics['Duration (min)'] = float(duration_sec / 60)
+                # Fill in timestamps for Max OC and On-Load voltages
+                if current_col and current_col in df.columns:
+                    open_circuit_mask = df[current_col].abs() < 0.01
+                    on_load_mask = df[current_col].abs() >= 0.01
+                    
+                    if open_circuit_mask.any():
+                        oc_idx = df.loc[open_circuit_mask, voltage_col].idxmax()
+                        metrics['Max OC Voltage Time (s)'] = float(time_in_seconds.loc[oc_idx] - time_in_seconds.iloc[0])
+                    
+                    if on_load_mask.any():
+                        onload_idx = df.loc[on_load_mask, voltage_col].idxmax()
+                        metrics['Max On-Load Time (s)'] = float(time_in_seconds.loc[onload_idx] - time_in_seconds.iloc[0])
+                
+                # Calculate time-weighted average voltage during discharge period
+                # Per user requirement: weighted average from activation till reaching min voltage on discharge
+                # taking into consideration the duration at which a certain voltage is continued
+                discharge_mask = (df.index >= first_activation_idx) & (df.index <= last_occurrence_idx)
+                discharge_voltages = df.loc[discharge_mask, voltage_col]
+                discharge_times = time_in_seconds.loc[discharge_mask]
+                
+                if len(discharge_voltages) > 1:
+                    # Calculate time differences
+                    time_diffs = discharge_times.diff().fillna(0)
+                    # Time-weighted average: Σ(V[i] × Δt[i]) / Σ(Δt[i])
+                    total_time = time_diffs.sum()
+                    if total_time > 0:
+                        weighted_avg_voltage = (discharge_voltages * time_diffs).sum() / total_time
+                        metrics['Weighted Average Voltage (V)'] = float(weighted_avg_voltage)
+                    else:
+                        metrics['Weighted Average Voltage (V)'] = float(discharge_voltages.mean())
+                else:
+                    metrics['Weighted Average Voltage (V)'] = float(discharge_voltages.mean()) if len(discharge_voltages) > 0 else None
+                
+                # Calculate voltage at targeted duration (if specified)
+                if target_duration_sec is not None and target_duration_sec > 0:
+                    # Find voltage at target_duration_sec from activation start
+                    target_time_absolute = time_in_seconds.iloc[first_activation_idx] + target_duration_sec
+                    
+                    if target_time_absolute <= time_in_seconds.iloc[last_occurrence_idx]:
+                        # Linear interpolation to find voltage at target duration
+                        from scipy import interpolate
+                        f = interpolate.interp1d(discharge_times.values, discharge_voltages.values, 
+                                                kind='linear', fill_value='extrapolate')
+                        voltage_at_target = float(f(target_time_absolute))
+                        metrics['Voltage at Targeted Duration (V)'] = voltage_at_target
+                    else:
+                        # Target duration exceeds actual duration
+                        metrics['Voltage at Targeted Duration (V)'] = None
+                else:
+                    metrics['Voltage at Targeted Duration (V)'] = None
             else:
                 # Voltage never reaches the threshold
                 metrics['Activation Time (Sec)'] = None
                 metrics['Duration (Sec)'] = None
-                metrics['Activation Time (min)'] = None
-                metrics['Duration (min)'] = None
+                metrics['Weighted Average Voltage (V)'] = None
+                metrics['Voltage at Targeted Duration (V)'] = None
         
         if voltage_col and voltage_col in df.columns and time_range_minutes > 0:
             voltage_drop = df[voltage_col].iloc[0] - df[voltage_col].iloc[-1]
-            metrics['Discharge Rate (V/min)'] = float(voltage_drop / time_range_minutes)
+            metrics['Discharge Rate (V/sec)'] = float(voltage_drop / (time_range_minutes * 60))
     
     if voltage_col and current_col and voltage_col in df.columns and current_col in df.columns:
         power = df[voltage_col] * df[current_col].abs()
         metrics['Average Power (W)'] = float(power.mean())
         metrics['Max Power (W)'] = float(power.max())
         
-        if time_col and time_col in df.columns and len(df) > 1:
-            time_diff = time_series.diff().fillna(0)
-            
-            if pd.api.types.is_timedelta64_dtype(time_diff):
-                time_diff_minutes = time_diff.dt.total_seconds() / 60
-            else:
-                time_diff_minutes = time_diff
-            
-            energy = (power * time_diff_minutes).sum() / 60
-            metrics['Total Energy (Wh)'] = float(energy)
+        # Total Energy (Wh) removed per user request (calculation was incorrect)
     
     # Calculate extended performance metrics if metadata is provided
     if extended_metadata and current_col and current_col in df.columns and time_col and time_col in df.columns and voltage_col and voltage_col in df.columns:
@@ -1751,8 +1805,26 @@ if data_mode == "Upload Files":
         max_value=100.0,
         value=1.0,
         step=0.1,
-        help="Minimum voltage threshold. Activation Time (Sec) = time when battery FIRST reaches ≥ this voltage. Duration (Sec) = TOTAL cumulative time when voltage ≥ this threshold."
+        help="Minimum voltage threshold. Activation Time (Sec) = time when battery FIRST reaches ≥ this voltage. Duration (Sec) = time from first activation to last occurrence of cutoff voltage."
     )
+    
+    # Optional target duration for voltage lookup
+    use_target_duration = st.sidebar.checkbox(
+        "Specify target duration for voltage lookup",
+        value=False,
+        help="Enable to interpolate and display voltage at a specific time point during discharge"
+    )
+    
+    target_duration_sec = None
+    if use_target_duration:
+        target_duration_sec = st.sidebar.number_input(
+            "Target duration (seconds):",
+            min_value=0.0,
+            max_value=100000.0,
+            value=1000.0,
+            step=10.0,
+            help="Voltage will be interpolated at this many seconds after activation"
+        )
     
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🎯 Standard Performance Benchmarks")
@@ -2079,7 +2151,8 @@ if len(dataframes) == num_builds and num_builds > 0:
                 metrics = calculate_metrics(
                     df, time_col, voltage_col, current_col, 
                     min_activation_voltage=min_activation_voltage,
-                    extended_metadata=extended_meta
+                    extended_metadata=extended_meta,
+                    target_duration_sec=target_duration_sec
                 )
                 metrics['Build'] = name
                 all_metrics.append(metrics)
@@ -2228,7 +2301,8 @@ if len(dataframes) == num_builds and num_builds > 0:
             metrics = calculate_metrics(
                 df, time_col, voltage_col, current_col,
                 min_activation_voltage=min_activation_voltage,
-                extended_metadata=extended_meta
+                extended_metadata=extended_meta,
+                target_duration_sec=target_duration_sec
             )
             metrics['Build'] = name
             all_build_metrics.append(metrics)
@@ -2489,59 +2563,7 @@ if len(dataframes) == num_builds and num_builds > 0:
                     if 'Voltage Retention (%)' in analytics:
                         st.metric("Voltage Retention", f"{analytics['Voltage Retention (%)']:.1f}%")
             
-            st.markdown("#### Anomaly Detection")
-            anomalies, anomaly_indices = detect_anomalies(df, voltage_col, time_col)
-            
-            if anomalies:
-                st.warning(f"⚠️ Detected {len(anomalies)} potential anomalies")
-                
-                with st.expander(f"View {len(anomalies)} anomalies"):
-                    for anomaly in anomalies[:20]:
-                        st.text(f"• {anomaly}")
-                    if len(anomalies) > 20:
-                        st.text(f"... and {len(anomalies) - 20} more")
-                
-                if voltage_col and len(anomaly_indices) > 0:
-                    df_plot = downsample_for_plotting(df)
-                    fig_anomaly = go.Figure()
-                    
-                    if time_col and time_col in df_plot.columns:
-                        x_data = df_plot[time_col]
-                        x_label = f"Time ({time_col})"
-                    else:
-                        x_data = df_plot.index
-                        x_label = "Index"
-                    
-                    fig_anomaly.add_trace(go.Scatter(
-                        x=x_data,
-                        y=df_plot[voltage_col],
-                        mode='lines',
-                        name='Voltage',
-                        line=dict(color='blue', width=2)
-                    ))
-                    
-                    anomaly_x = [df[time_col if time_col else 'index'].iloc[i] if time_col and hasattr(df[time_col], 'iloc') else i for i in anomaly_indices if i < len(df)]
-                    anomaly_y = [df[voltage_col].iloc[i] for i in anomaly_indices if i < len(df)]
-                    
-                    fig_anomaly.add_trace(go.Scatter(
-                        x=anomaly_x,
-                        y=anomaly_y,
-                        mode='markers',
-                        name='Anomalies',
-                        marker=dict(color='red', size=10, symbol='x')
-                    ))
-                    
-                    fig_anomaly.update_layout(
-                        title=f"{name} - Voltage with Anomalies Highlighted",
-                        xaxis_title=x_label,
-                        yaxis_title="Voltage (V)",
-                        height=400,
-                        template="plotly_white"
-                    )
-                    
-                    st.plotly_chart(fig_anomaly, use_container_width=True)
-            else:
-                st.success("✅ No significant anomalies detected")
+            # Anomaly detection removed per user request
             
             st.markdown("---")
         
@@ -2562,7 +2584,8 @@ if len(dataframes) == num_builds and num_builds > 0:
                 metrics = calculate_metrics(
                     df, time_col, voltage_col, current_col,
                     min_activation_voltage=min_activation_voltage,
-                    extended_metadata=extended_meta
+                    extended_metadata=extended_meta,
+                    target_duration_sec=target_duration_sec
                 )
                 analytics = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
                 
@@ -2713,7 +2736,8 @@ if len(dataframes) == num_builds and num_builds > 0:
             metrics = calculate_metrics(
                 df, time_col, voltage_col, current_col,
                 min_activation_voltage=min_activation_voltage,
-                extended_metadata=extended_meta
+                extended_metadata=extended_meta,
+                target_duration_sec=target_duration_sec
             )
             advanced = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
             
