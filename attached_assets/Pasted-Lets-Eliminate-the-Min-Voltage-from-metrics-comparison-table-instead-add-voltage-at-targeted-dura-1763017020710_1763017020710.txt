@@ -1,0 +1,31 @@
+Lets, Eliminate the Min. Voltage from metrics comparison table, instead add voltage at targeted duration.
+Average Voltage should be average voltage from activation till reaching min. voltage on discharge. It should be a weightage voltage taking into consideration the duration at which a certain voltage is continued.
+
+The Max. Open Circuit volatage is the voltage obtained during the duration of discharge time that the current was 0. this is normally, visible from the discharge profile. The open circuit voltage is often i 1st few sec's.
+
+The Max. On load voltage is the voltage that is observed after a certain load is applied. For, a max. voltage you must intidate the current, load current and the time at which it occurred.
+
+ACtivation and duration should be displayed only one and should be in sec's and not in minutes.
+
+The total Energy (Wh) seems to be wrong and should not be displayed.
+
+In all tables, change all timings to sec's.
+
+Advanced Analytics:
+Drop Volatage anomaly analysis.
+Correct the calculation of total calorific value.
+Calculation Methodology:
+Height pellet weight multipied by no. of cells, multiplied by no. of parallel stacks is equal to total heat pellet weight in grams.
+Total calorific value, is equal to total heat pellet weight in grams multiplied by calorific value per gram. The calorific value given is calories per gram and not kJ/gram.
+
+Please find a correlation, if any between the total calorific value, total weight of the anode, cathode, electrolyte and heat pellet in the 4 stacks (Total Weight of stack). And, the weight of anode in 4 parallel cells.
+
+
+Also, a correlation between these parameters and duration.
+
+You, may access, if any of the variables do have significant correlations and they may be dropped from the analysis.
+
+Data of the calculations may be provided, to cross check the calculations.
+
+Other issues:
+We are having to load the data each time. I would like to data stored, permanently with suitable passwords so that it is not accessible to anyone, who doesn't have the password. It should be possible to edit the data for corrections.
