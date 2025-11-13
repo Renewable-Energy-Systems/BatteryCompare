@@ -6,6 +6,25 @@ This is a Streamlit-based web application for analyzing and comparing **primary 
 
 ## Recent Updates (Nov 2025)
 
+**Metrics Redesign - Seconds-Only Display** (Nov 13, 2025):
+- **Removed Metrics**: Eliminated Min Voltage, Voltage Range, Total Energy (Wh), and all minute-based time displays
+- **New Advanced Metrics**:
+  - **Weighted Average Voltage (V)**: Time-weighted average voltage during discharge period (activation to last cutoff)
+  - **Voltage at Targeted Duration (V)**: Optional metric using linear interpolation to find voltage at user-specified target time
+  - **Max OC Voltage Time (s)**: Timestamp when maximum open circuit voltage occurred
+  - **Max On-Load Current (A)**: Current value when maximum on-load voltage occurred
+  - **Max On-Load Time (s)**: Timestamp when maximum on-load voltage occurred
+- **Time Display Standardization**: ALL timing values now display exclusively in seconds (no minutes)
+  - Activation Time: Displayed in seconds only
+  - Duration: Displayed in seconds only
+  - Total Time: Displayed in seconds only
+  - Discharge Rate: Now V/sec (formerly V/min)
+- **Standard Benchmarks Update**: 
+  - Max Activation Time: Input in milliseconds, displayed as "ms (s)" in reports
+  - Min Duration: Input in seconds only
+  - All export functions (text, PDF, Excel, CSV) use seconds-based metrics
+- **Target Duration Feature**: Optional checkbox to specify target duration for voltage interpolation analysis
+
 **Extended Build Metadata & Advanced Metrics** (Nov 10, 2025):
 - **Extended Build Information Form**: 7 input fields per build for detailed battery construction data
   - Weight inputs: Anode weight per cell, Cathode weight per cell, Heat pellet weight per cell, Electrolyte weight per cell
