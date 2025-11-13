@@ -1698,10 +1698,13 @@ def update_comparison_in_db(comparison_id, name, dataframes, build_names, metric
                 session.close()
                 return False, f"Error hashing new password: {str(e)}"
         
+        # Check password protection status before closing session
+        is_protected = comparison.password_hash is not None
+        
         session.commit()
         session.close()
         
-        protection_msg = " (password protected)" if comparison.password_hash else ""
+        protection_msg = " (password protected)" if is_protected else ""
         return True, f"Comparison updated successfully{protection_msg}"
     except Exception as e:
         return False, f"Error updating comparison: {str(e)}"
@@ -1884,7 +1887,7 @@ if DATABASE_URL and Session:
                         st.session_state['editing_comparison_name'] = comp_meta['name']
                         st.session_state['editing_comparison_protected'] = comp_meta['is_protected']
                         if loaded_battery_type:
-                            st.session_state['battery_type'] = loaded_battery_type
+                            st.session_state['loaded_battery_type_preference'] = loaded_battery_type
                         if loaded_extended_meta:
                             st.session_state['build_metadata_extended'] = loaded_extended_meta
                         st.success(msg)
@@ -2025,6 +2028,13 @@ if data_mode == "Upload Files":
         if 'editing_comparison_name' in st.session_state:
             st.sidebar.info(f"📝 Editing: **{st.session_state['editing_comparison_name']}**")
         
+        # Show battery type preference from loaded comparison
+        if 'loaded_battery_type_preference' in st.session_state:
+            loaded_type = st.session_state['loaded_battery_type_preference']
+            current_type = st.session_state.get('battery_type', 'General')
+            if loaded_type != current_type:
+                st.sidebar.warning(f"💡 This comparison was saved with battery type: **{loaded_type}**. Current type: **{current_type}**")
+        
         if st.sidebar.button("Clear Loaded Data"):
             del st.session_state['loaded_dataframes']
             del st.session_state['loaded_build_names']
@@ -2036,6 +2046,8 @@ if data_mode == "Upload Files":
                 del st.session_state['editing_comparison_name']
             if 'editing_comparison_protected' in st.session_state:
                 del st.session_state['editing_comparison_protected']
+            if 'loaded_battery_type_preference' in st.session_state:
+                del st.session_state['loaded_battery_type_preference']
             st.rerun()
     else:
         for i in range(num_builds):
