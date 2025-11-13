@@ -428,32 +428,20 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                     total_ampere_seconds = (current_abs[valid_discharge_intervals] * time_diff_seconds[valid_discharge_intervals]).sum()
                     metrics['Total Ampere-Seconds (A·s)'] = float(total_ampere_seconds)
                     
-                    # Calculate total weights from per-cell values (with backward compatibility)
-                    anode_weight_per_cell = extended_metadata.get('anode_weight_per_cell', 0)
-                    cathode_weight_per_cell = extended_metadata.get('cathode_weight_per_cell', 0)
-                    stacks_in_parallel = extended_metadata.get('stacks_in_parallel', 1)
+                    # Use pre-calculated total weights from extended_metadata
+                    # These are already calculated as: per_cell × cells_in_series × stacks_in_parallel
+                    total_anode_weight = extended_metadata.get('total_anode_weight', 0)
+                    total_cathode_weight = extended_metadata.get('total_cathode_weight', 0)
                     
-                    # Total weight of all cells in parallel = per_cell × stacks_in_parallel
-                    # Fall back to legacy total_*_weight if per-cell values not provided
-                    if anode_weight_per_cell and stacks_in_parallel:
-                        total_anode_weight_parallel = anode_weight_per_cell * stacks_in_parallel
-                    else:
-                        total_anode_weight_parallel = extended_metadata.get('total_anode_weight', 0)
-                    
-                    if cathode_weight_per_cell and stacks_in_parallel:
-                        total_cathode_weight_parallel = cathode_weight_per_cell * stacks_in_parallel
-                    else:
-                        total_cathode_weight_parallel = extended_metadata.get('total_cathode_weight', 0)
-                    
-                    # Ampere-seconds per gram of anode (using total weight of all cells in parallel)
-                    if total_anode_weight_parallel > 0:
-                        metrics['A·s per gram Anode'] = float(total_ampere_seconds / total_anode_weight_parallel)
+                    # Ampere-seconds per gram of anode
+                    if total_anode_weight > 0:
+                        metrics['A·s per gram Anode'] = float(total_ampere_seconds / total_anode_weight)
                     else:
                         metrics['A·s per gram Anode'] = None
                     
-                    # Ampere-seconds per gram of cathode (using total weight of all cells in parallel)
-                    if total_cathode_weight_parallel > 0:
-                        metrics['A·s per gram Cathode'] = float(total_ampere_seconds / total_cathode_weight_parallel)
+                    # Ampere-seconds per gram of cathode
+                    if total_cathode_weight > 0:
+                        metrics['A·s per gram Cathode'] = float(total_ampere_seconds / total_cathode_weight)
                     else:
                         metrics['A·s per gram Cathode'] = None
                 else:
@@ -867,8 +855,10 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                     ext_data.append(['Total Cathode Weight', f"{ext_meta['total_cathode_weight']:.2f} g"])
                 if ext_meta.get('total_stack_weight'):
                     ext_data.append(['Total Stack Weight', f"{ext_meta['total_stack_weight']:.2f} g"])
-                if ext_meta.get('calorific_value_per_g'):
-                    ext_data.append(['Calorific Value per gram Stack', f"{ext_meta['calorific_value_per_g']:.2f} kJ/g"])
+                if ext_meta.get('calorific_value_per_gram'):
+                    ext_data.append(['Calorific Value per gram', f"{ext_meta['calorific_value_per_gram']:.0f} cal/g"])
+                if ext_meta.get('total_calorific_value'):
+                    ext_data.append(['Total Calorific Value', f"{ext_meta['total_calorific_value']:.2f} kJ"])
                 
                 if ext_data:
                     ext_table = Table(ext_data, colWidths=[3*inch, 2*inch])
@@ -1349,26 +1339,14 @@ def calculate_duration_correlations(all_metrics_list, all_extended_metadata_list
         if duration is None or not ext_meta:
             continue
         
-        # Calculate total weights from per-cell values
-        anode_per_cell = ext_meta.get('anode_weight_per_cell', 0)
-        cathode_per_cell = ext_meta.get('cathode_weight_per_cell', 0)
-        stacks_in_parallel = ext_meta.get('stacks_in_parallel', 1)
+        # Get pre-calculated total weights from extended metadata
+        # These are already calculated correctly with stacks_in_parallel multiplier
+        total_anode = ext_meta.get('total_anode_weight', 0)
+        total_cathode = ext_meta.get('total_cathode_weight', 0)
         
-        # Fall back to legacy total weights if per-cell not available
-        if anode_per_cell and stacks_in_parallel:
-            total_anode = anode_per_cell * stacks_in_parallel
-        else:
-            total_anode = ext_meta.get('total_anode_weight', 0)
-        
-        if cathode_per_cell and stacks_in_parallel:
-            total_cathode = cathode_per_cell * stacks_in_parallel
-        else:
-            total_cathode = ext_meta.get('total_cathode_weight', 0)
-        
-        # Calculate total calorific value
-        calorific_per_g = ext_meta.get('calorific_value_per_g', 0)
-        total_stack_weight = ext_meta.get('total_stack_weight', 0)
-        total_calorific = calorific_per_g * total_stack_weight if calorific_per_g and total_stack_weight else 0
+        # Get pre-calculated total calorific value (already converted from cal to kJ)
+        # Formula: total_heat_pellet_weight × calorific_value_cal_per_g × 0.004184
+        total_calorific = ext_meta.get('total_calorific_value', 0)
         
         # Store data
         durations.append(duration)
@@ -1929,18 +1907,29 @@ if data_mode == "Upload Files":
                 
                 st.markdown("**Energy Input**")
                 calorific_value = st.number_input(
-                    "Calorific value (kJ/g):", 
+                    "Calorific value (cal/g):", 
                     min_value=0.0, 
-                    max_value=1000.0, 
+                    max_value=10000.0, 
                     value=0.0, 
-                    step=0.1,
+                    step=1.0,
                     key=f"calorific_value_{i}",
-                    help="Calorific value per gram in kJ/g"
+                    help="Calorific value per gram in calories/g (will be converted to kJ)"
                 )
                 
-                # Calculate total stack weight correctly:
-                # Total stack weight = (sum of all per-cell weights) × cells_in_series
-                total_stack_weight = (anode_weight + cathode_weight + heat_pellet_weight + electrolyte_weight) * cells_in_series if cells_in_series > 0 else 0
+                # Calculate totals correctly:
+                # Total weights for all cells in parallel:
+                # Total anode = anode_per_cell × cells_in_series × stacks_in_parallel
+                # Total cathode = cathode_per_cell × cells_in_series × stacks_in_parallel
+                # Total heat pellet = heat_pellet_per_cell × cells_in_series × stacks_in_parallel
+                # Total stack weight = (sum of all per-cell weights) × cells_in_series × stacks_in_parallel
+                total_anode = anode_weight * cells_in_series * stacks_in_parallel if anode_weight > 0 else 0
+                total_cathode = cathode_weight * cells_in_series * stacks_in_parallel if cathode_weight > 0 else 0
+                total_heat_pellet = heat_pellet_weight * cells_in_series * stacks_in_parallel if heat_pellet_weight > 0 else 0
+                total_electrolyte = electrolyte_weight * cells_in_series * stacks_in_parallel if electrolyte_weight > 0 else 0
+                total_stack_weight = (anode_weight + cathode_weight + heat_pellet_weight + electrolyte_weight) * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
+                
+                # Total calorific value (kJ) = total heat pellet weight (g) × calorific value (cal/g) × 0.004184 (cal to kJ conversion)
+                total_calorific = total_heat_pellet * calorific_value * 0.004184 if calorific_value > 0 and total_heat_pellet > 0 else 0
                 
                 st.session_state['build_metadata_extended'][i] = {
                     'anode_weight_per_cell': anode_weight,
@@ -1950,10 +1939,12 @@ if data_mode == "Upload Files":
                     'cells_in_series': cells_in_series,
                     'stacks_in_parallel': stacks_in_parallel,
                     'calorific_value_per_gram': calorific_value,
-                    'total_anode_weight': anode_weight * cells_in_series if anode_weight > 0 else 0,
-                    'total_cathode_weight': cathode_weight * cells_in_series if cathode_weight > 0 else 0,
+                    'total_anode_weight': total_anode,
+                    'total_cathode_weight': total_cathode,
+                    'total_heat_pellet_weight': total_heat_pellet,
+                    'total_electrolyte_weight': total_electrolyte,
                     'total_stack_weight': total_stack_weight,
-                    'total_calorific_value': calorific_value * total_stack_weight if calorific_value > 0 and total_stack_weight > 0 else 0
+                    'total_calorific_value': total_calorific
                 }
             
             if uploaded_file:
