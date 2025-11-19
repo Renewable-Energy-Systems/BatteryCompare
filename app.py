@@ -300,27 +300,19 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
             if on_load_mask.any():
                 onload_idx = df.loc[on_load_mask, voltage_col].idxmax()
                 metrics['Max On-Load Voltage (V)'] = float(df.loc[onload_idx, voltage_col])
-                # Add current at that time
-                metrics['Max On-Load Current (A)'] = float(df.loc[onload_idx, current_col])
                 # Add timestamp when max on-load voltage occurred
                 if time_col and time_col in df.columns:
                     metrics['Max On-Load Time (s)'] = None  # Will be filled later when time is converted
             else:
                 metrics['Max On-Load Voltage (V)'] = None
-                metrics['Max On-Load Current (A)'] = None
                 metrics['Max On-Load Time (s)'] = None
         else:
             # If no current column, assume all measurements are on-load
             onload_idx = df[voltage_col].idxmax()
             metrics['Max On-Load Voltage (V)'] = float(df.loc[onload_idx, voltage_col])
-            metrics['Max On-Load Current (A)'] = None
             metrics['Max On-Load Time (s)'] = None
             metrics['Max Open Circuit Voltage (V)'] = None
             metrics['Max OC Voltage Time (s)'] = None
-    
-    if current_col and current_col in df.columns:
-        metrics['Max Current (A)'] = float(df[current_col].max())
-        metrics['Average Current (A)'] = float(df[current_col].mean())
     
     if time_col and time_col in df.columns:
         time_series = df[time_col]
@@ -353,8 +345,6 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                 time_range_minutes = float(time_range_raw)
             except:
                 time_range_minutes = 0
-        
-        metrics['Total Time (s)'] = time_range_minutes * 60
         
         # Calculate activation time and duration
         # Activation Time (Sec): The time when battery FIRST reaches >= min_activation_voltage
@@ -501,20 +491,21 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                     total_ampere_seconds = (current_abs[valid_discharge_intervals] * time_diff_seconds[valid_discharge_intervals]).sum()
                     metrics['Total Ampere-Seconds (A·s)'] = float(total_ampere_seconds)
                     
-                    # Use pre-calculated total weights from extended_metadata
-                    # These are already calculated as: per_cell × cells_in_series × stacks_in_parallel
-                    total_anode_weight = extended_metadata.get('total_anode_weight', 0)
-                    total_cathode_weight = extended_metadata.get('total_cathode_weight', 0)
+                    # Get per-cell weights and stacks in parallel
+                    # Correct formula: Total A·s / No. of Stacks in parallel / Weight of single pellet
+                    anode_per_cell = extended_metadata.get('anode_weight_per_cell', 0)
+                    cathode_per_cell = extended_metadata.get('cathode_weight_per_cell', 0)
+                    stacks_in_parallel = extended_metadata.get('stacks_in_parallel', 1)
                     
-                    # Ampere-seconds per gram of anode
-                    if total_anode_weight > 0:
-                        metrics['A·s per gram Anode'] = float(total_ampere_seconds / total_anode_weight)
+                    # Ampere-seconds per gram of anode pellet
+                    if anode_per_cell > 0 and stacks_in_parallel > 0:
+                        metrics['A·s per gram Anode'] = float(total_ampere_seconds / stacks_in_parallel / anode_per_cell)
                     else:
                         metrics['A·s per gram Anode'] = None
                     
-                    # Ampere-seconds per gram of cathode
-                    if total_cathode_weight > 0:
-                        metrics['A·s per gram Cathode'] = float(total_ampere_seconds / total_cathode_weight)
+                    # Ampere-seconds per gram of cathode pellet
+                    if cathode_per_cell > 0 and stacks_in_parallel > 0:
+                        metrics['A·s per gram Cathode'] = float(total_ampere_seconds / stacks_in_parallel / cathode_per_cell)
                     else:
                         metrics['A·s per gram Cathode'] = None
                 else:
@@ -665,7 +656,7 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
                 actual_sec = metrics_df.loc[build_name, 'Duration (Sec)']
                 if pd.notna(actual_sec):
                     diff = actual_sec - std_duration_sec
-                    report.append(f"  Duration: {actual_sec:.2f} s (Std: {std_duration_sec} s, Diff: {diff:+.2f} s)")
+                    report.append(f"  Duration: {actual_sec:.2f} s (Target: {std_duration_sec} s, Diff: {diff:+.2f} s)")
         
         report.append("")
     
@@ -829,7 +820,7 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             std_activation_sec = std_activation_time_ms / 1000.0
             std_data.append(['Max Activation Time', f"{std_activation_time_ms} ms ({std_activation_sec:.2f} s)"])
         if std_duration_sec:
-            std_data.append(['Min Duration', f"{std_duration_sec} s"])
+            std_data.append(['Target Min Duration', f"{std_duration_sec} s"])
         
         std_table = Table(std_data, colWidths=[3*inch, 3*inch])
         std_table.setStyle(TableStyle([
@@ -1994,12 +1985,12 @@ if data_mode == "Upload Files":
         std_activation_time = std_activation_time_ms / 60000.0 if std_activation_time_ms > 0 else None
         
         std_duration_sec = st.sidebar.number_input(
-            "Std. Min Duration (s):",
+            "Target Min Duration (s):",
             min_value=0.0,
             max_value=100000.0,
             value=400.0,
             step=10.0,
-            help="Minimum acceptable discharge duration in seconds"
+            help="Target minimum acceptable discharge duration in seconds"
         )
         # Convert seconds to minutes for comparison with metrics
         std_duration = std_duration_sec / 60.0 if std_duration_sec > 0 else None
@@ -2330,8 +2321,6 @@ if len(dataframes) == num_builds and num_builds > 0:
                     st.markdown(f"### {metrics['Build']}")
                     if 'Max On-Load Voltage (V)' in metrics and metrics['Max On-Load Voltage (V)'] is not None:
                         st.metric("Max On-Load V", f"{metrics['Max On-Load Voltage (V)']:.3f} V")
-                    if 'Max On-Load Current (A)' in metrics and metrics['Max On-Load Current (A)'] is not None:
-                        st.metric("Max On-Load Current", f"{metrics['Max On-Load Current (A)']:.3f} A")
                     if 'Max On-Load Time (s)' in metrics and metrics['Max On-Load Time (s)'] is not None:
                         st.metric("Max On-Load Time", f"{metrics['Max On-Load Time (s)']:.2f} s")
                     if 'Max Open Circuit Voltage (V)' in metrics and metrics['Max Open Circuit Voltage (V)'] is not None:
@@ -2354,7 +2343,6 @@ if len(dataframes) == num_builds and num_builds > 0:
                 summary = {
                     'Build': metrics['Build'],
                     'Max On-Load V': metrics.get('Max On-Load Voltage (V)', 'N/A'),
-                    'Max On-Load I (A)': metrics.get('Max On-Load Current (A)', 'N/A'),
                     'Max On-Load Time (s)': metrics.get('Max On-Load Time (s)', 'N/A'),
                     'Max OC V': metrics.get('Max Open Circuit Voltage (V)', 'N/A'),
                     'Max OC Time (s)': metrics.get('Max OC Voltage Time (s)', 'N/A'),
@@ -2762,7 +2750,7 @@ if len(dataframes) == num_builds and num_builds > 0:
                             if pd.notna(actual_sec):
                                 diff = actual_sec - std_duration_sec
                                 build_data['Duration (Actual s)'] = actual_sec
-                                build_data['Duration (Std s)'] = std_duration_sec
+                                build_data['Duration (Target s)'] = std_duration_sec
                                 build_data['Duration (Diff s)'] = diff
                         
                         standard_comparison_data.append(build_data)
