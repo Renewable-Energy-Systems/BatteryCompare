@@ -2171,6 +2171,17 @@ if data_mode == "Upload Files":
     if 'build_metadata_extended' not in st.session_state:
         st.session_state['build_metadata_extended'] = {}
     
+    # Initialize all form field session_state keys with defaults BEFORE widgets are rendered
+    for i in range(num_builds):
+        # Only initialize if not already set (preserves existing values and allows file extraction to update)
+        st.session_state.setdefault(f'anode_weight_{i}', 0.0)
+        st.session_state.setdefault(f'cathode_weight_{i}', 0.0)
+        st.session_state.setdefault(f'heat_pellet_{i}', 0.0)
+        st.session_state.setdefault(f'electrolyte_{i}', 0.0)
+        st.session_state.setdefault(f'cells_series_{i}', 1)
+        st.session_state.setdefault(f'stacks_parallel_{i}', 1)
+        st.session_state.setdefault(f'calorific_value_{i}', 0.0)
+    
     if 'loaded_dataframes' in st.session_state and 'loaded_build_names' in st.session_state:
         dataframes = st.session_state['loaded_dataframes']
         build_names = st.session_state['loaded_build_names']
@@ -2205,6 +2216,8 @@ if data_mode == "Upload Files":
                 del st.session_state['loaded_battery_type_preference']
             st.rerun()
     else:
+        # PASS 1: Collect file uploads and extract metadata BEFORE rendering form widgets
+        uploaded_files = []
         for i in range(num_builds):
             st.sidebar.markdown(f"### Build {i+1}")
             build_name = st.sidebar.text_input(f"Build {i+1} name:", value=f"Build {i+1}", key=f"name_{i}")
@@ -2213,7 +2226,37 @@ if data_mode == "Upload Files":
                 type=['csv', 'xlsx', 'xls'],
                 key=f"file_{i}"
             )
+            uploaded_files.append(uploaded_file)
             
+            # Process uploaded file and extract metadata BEFORE widgets are rendered
+            if uploaded_file and f'file_processed_{i}_{uploaded_file.file_id}' not in st.session_state:
+                try:
+                    df, metadata, standard_params, file_extended_metadata = load_data(uploaded_file)
+                    if df is not None and file_extended_metadata and any(v is not None for v in file_extended_metadata.values()):
+                        # Extract values
+                        cells_in_series = file_extended_metadata.get('cells_in_series', 0) or 0
+                        stacks_in_parallel = file_extended_metadata.get('stacks_in_parallel', 0) or 0
+                        anode_per_cell = file_extended_metadata.get('anode_weight_per_cell', 0) or 0
+                        cathode_per_cell = file_extended_metadata.get('cathode_weight_per_cell', 0) or 0
+                        heat_pellet = file_extended_metadata.get('heat_pellet_weight', 0) or 0
+                        electrolyte = file_extended_metadata.get('electrolyte_weight', 0) or 0
+                        calorific = file_extended_metadata.get('calorific_value_per_gram', 0) or 0
+                        
+                        # Update session_state for form fields (before widgets are created)
+                        st.session_state[f'anode_weight_{i}'] = float(anode_per_cell)
+                        st.session_state[f'cathode_weight_{i}'] = float(cathode_per_cell)
+                        st.session_state[f'heat_pellet_{i}'] = float(heat_pellet)
+                        st.session_state[f'electrolyte_{i}'] = float(electrolyte)
+                        st.session_state[f'cells_series_{i}'] = int(cells_in_series)
+                        st.session_state[f'stacks_parallel_{i}'] = int(stacks_in_parallel)
+                        st.session_state[f'calorific_value_{i}'] = float(calorific)
+                        st.session_state[f'file_processed_{i}_{uploaded_file.file_id}'] = True
+                        st.info(f"✅ Metadata extracted from Excel file for Build {i+1}")
+                except Exception as e:
+                    st.error(f"Error processing file for Build {i+1}: {str(e)}")
+        
+        # PASS 2: Render form widgets (they will use the updated session_state values)
+        for i in range(num_builds):
             with st.sidebar.expander("⚙️ Extended Build Metadata (Optional)", expanded=False):
                 st.markdown("**Weight Inputs (per cell)**")
                 col1, col2 = st.columns(2)
@@ -2313,11 +2356,14 @@ if data_mode == "Upload Files":
                     'total_stack_weight': total_stack_weight,
                     'total_calorific_value': total_calorific
                 }
-            
+        
+        # PASS 3: Process uploaded files for data analysis
+        for i, uploaded_file in enumerate(uploaded_files):
             if uploaded_file:
-                uploaded_files.append(uploaded_file)
                 df, metadata, standard_params, file_extended_metadata = load_data(uploaded_file)
                 if df is not None:
+                    build_name = st.session_state.get(f'name_{i}', f"Build {i+1}")
+                    
                     if metadata and any(metadata.values()):
                         if metadata.get('build_id'):
                             build_name = f"{metadata['build_id']}"
@@ -2330,54 +2376,6 @@ if data_mode == "Upload Files":
                     if standard_params and any(v is not None for v in standard_params.values()):
                         if 'extracted_standard_params' not in st.session_state:
                             st.session_state['extracted_standard_params'] = standard_params
-                    
-                    # Store extended metadata from file to auto-populate form
-                    if file_extended_metadata and any(v is not None for v in file_extended_metadata.values()):
-                        # Calculate total weights for this build
-                        cells_in_series = file_extended_metadata.get('cells_in_series', 0) or 0
-                        stacks_in_parallel = file_extended_metadata.get('stacks_in_parallel', 0) or 0
-                        anode_per_cell = file_extended_metadata.get('anode_weight_per_cell', 0) or 0
-                        cathode_per_cell = file_extended_metadata.get('cathode_weight_per_cell', 0) or 0
-                        heat_pellet = file_extended_metadata.get('heat_pellet_weight', 0) or 0
-                        electrolyte = file_extended_metadata.get('electrolyte_weight', 0) or 0
-                        calorific = file_extended_metadata.get('calorific_value_per_gram', 0) or 0
-                        
-                        # Calculate totals
-                        total_anode = anode_per_cell * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
-                        total_cathode = cathode_per_cell * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
-                        total_heat_pellet = heat_pellet * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
-                        total_electrolyte = electrolyte * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
-                        total_stack_weight = (anode_per_cell + cathode_per_cell + heat_pellet + electrolyte) * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
-                        total_calorific = total_heat_pellet * calorific * 0.004184 if calorific > 0 and total_heat_pellet > 0 else 0
-                        
-                        # Store complete extended metadata with calculated totals
-                        st.session_state['build_metadata_extended'][i] = {
-                            'anode_weight_per_cell': anode_per_cell,
-                            'cathode_weight_per_cell': cathode_per_cell,
-                            'heat_pellet_weight': heat_pellet,
-                            'electrolyte_weight': electrolyte,
-                            'cells_in_series': cells_in_series,
-                            'stacks_in_parallel': stacks_in_parallel,
-                            'calorific_value_per_gram': calorific,
-                            'total_anode_weight': total_anode,
-                            'total_cathode_weight': total_cathode,
-                            'total_heat_pellet_weight': total_heat_pellet,
-                            'total_electrolyte_weight': total_electrolyte,
-                            'total_stack_weight': total_stack_weight,
-                            'total_calorific_value': total_calorific
-                        }
-                        
-                        # Seed session_state keys to auto-populate form fields (no rerun needed)
-                        if f'metadata_extracted_{i}' not in st.session_state:
-                            st.session_state[f'metadata_extracted_{i}'] = True
-                            st.session_state[f'anode_weight_{i}'] = float(anode_per_cell)
-                            st.session_state[f'cathode_weight_{i}'] = float(cathode_per_cell)
-                            st.session_state[f'heat_pellet_{i}'] = float(heat_pellet)
-                            st.session_state[f'electrolyte_{i}'] = float(electrolyte)
-                            st.session_state[f'cells_series_{i}'] = int(cells_in_series)
-                            st.session_state[f'stacks_parallel_{i}'] = int(stacks_in_parallel)
-                            st.session_state[f'calorific_value_{i}'] = float(calorific)
-                            st.info(f"✅ Metadata extracted from Excel file for Build {i+1}")
                     
                     # Ensure unique build names to prevent duplicate indices in metrics_df
                     unique_name = build_name
