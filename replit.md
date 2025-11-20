@@ -61,3 +61,19 @@ Preferred communication style: Simple, everyday language.
 - **datetime**: Timestamp generation.
 - **os**: Environment variable access.
 - **json**: Data serialization.
+## Recent Implementation (November 2025)
+
+### Standard Parameters & Extended Metadata Persistence ✅
+**Core Feature**: Complete save/load workflow for standard performance parameters and extended build metadata.
+
+**Implementation**:
+- Added `standard_params_json` column to `saved_comparisons` table
+- Auto-extraction pipeline parses Excel metadata (basic info, standard benchmarks, extended build data)
+- Form fields auto-populate from extracted/loaded data with visual confirmation
+- Save persists all parameters to database; Load restores complete session state
+- Unique build name generation prevents duplicate indices (auto-appends counter: "Build 1", "Build 1 (1)")
+- `safe_scalar()` helper function handles pandas Series/scalar conversions
+
+**Verification**: Database query confirms data persistence; save/load workflow tested end-to-end successfully.
+
+**Migration Fix**: Loader-side deduplication automatically handles legacy comparisons with duplicate build names, ensuring backward compatibility. All saved comparisons (new and old) work reliably.

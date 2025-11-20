@@ -76,14 +76,16 @@ st.set_page_config(page_title="Battery Discharge Analysis", layout="wide")
 st.title("🔋 Battery Discharge Data Analysis")
 st.markdown("Compare discharge curves and performance metrics across different builds")
 
+def safe_scalar(value):
+    """Convert pandas Series to scalar, or return value as-is if already scalar"""
+    if isinstance(value, pd.Series):
+        return value.iloc[0] if len(value) > 0 else None
+    return value
+
 def extract_metadata_from_file(uploaded_file):
     """
-    Extract metadata and standard parameters from the top rows of the file.
-    Supports two formats:
-    1. Metadata in columns 0-1 (original format)
-    2. Metadata in columns 4-5 (new format with empty leading columns)
-    
-    Returns: (metadata_dict, standard_params_dict, data_start_row)
+    Extract ALL metadata from Excel header: basic info, standard params, and extended build data.
+    Returns: (metadata_dict, standard_params_dict, extended_metadata_dict, data_start_row)
     """
     metadata = {
         'battery_code': None,
@@ -98,13 +100,23 @@ def extract_metadata_from_file(uploaded_file):
         'std_duration_sec': None
     }
     
+    extended_metadata = {
+        'anode_weight_per_cell': None,
+        'cathode_weight_per_cell': None,
+        'electrolyte_weight': None,
+        'heat_pellet_weight': None,
+        'calorific_value_per_gram': None,
+        'cells_in_series': None,
+        'stacks_in_parallel': None
+    }
+    
     try:
         if uploaded_file.name.endswith('.csv'):
-            temp_df = pd.read_csv(uploaded_file, nrows=10, header=None)
+            temp_df = pd.read_csv(uploaded_file, nrows=20, header=None)
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
-            temp_df = pd.read_excel(uploaded_file, nrows=10, header=None)
+            temp_df = pd.read_excel(uploaded_file, nrows=20, header=None)
         else:
-            return metadata, standard_params, 0
+            return metadata, standard_params, extended_metadata, 0
         
         uploaded_file.seek(0)
         
@@ -112,64 +124,102 @@ def extract_metadata_from_file(uploaded_file):
         found_header = False
         
         for idx, row in temp_df.iterrows():
-            # Check all columns for metadata and headers
             row_strings = [str(val).lower() if pd.notna(val) else "" for val in row]
             
-            # Check if any column contains header keywords
+            # Check if this is the data header row
             header_found_in_row = any('time' in s or 'voltage' in s or 'current' in s for s in row_strings)
             
             if header_found_in_row:
-                # This is the header row
                 data_start_row = idx
                 found_header = True
                 break
             
-            # Check for metadata and standard parameters in any column pair
+            # Parse metadata from any column pair
             for col_idx in range(len(row) - 1):
                 label = str(row[col_idx]).lower() if pd.notna(row[col_idx]) else ""
                 value = row[col_idx + 1]
                 
+                if not label or not pd.notna(value):
+                    continue
+                
                 # Basic metadata
-                if 'battery' in label and 'code' in label and pd.notna(value):
+                if 'battery' in label and 'code' in label:
                     metadata['battery_code'] = str(value)
-                elif ('temperature' in label or 'temp' in label) and pd.notna(value):
+                elif 'temperature' in label:
                     metadata['temperature'] = str(value)
-                elif 'build' in label and ('number' in label or 'id' in label) and pd.notna(value):
+                elif 'build' in label and 'number' in label:
                     metadata['build_id'] = str(value)
                 
                 # Standard benchmark parameters
-                elif 'min' in label and 'voltage' in label and 'activ' in label and pd.notna(value):
+                elif 'min' in label and 'voltage' in label and 'activ' in label:
                     try:
                         standard_params['min_activation_voltage'] = float(value)
                     except:
                         pass
-                elif 'std' in label and 'max' in label and ('open' in label or 'oc' in label or 'circuit' in label) and pd.notna(value):
+                elif 'std' in label and 'max' in label and ('open' in label or 'circuit' in label):
                     try:
                         standard_params['std_max_oc_voltage'] = float(value)
                     except:
                         pass
-                elif 'std' in label and 'max' in label and 'activ' in label and 'time' in label and pd.notna(value):
+                elif 'std' in label and 'activ' in label and 'time' in label:
                     try:
                         standard_params['std_activation_time_ms'] = float(value)
                     except:
                         pass
-                elif 'target' in label and 'min' in label and 'duration' in label and pd.notna(value):
+                elif 'target' in label and 'duration' in label:
                     try:
                         standard_params['std_duration_sec'] = float(value)
                     except:
                         pass
+                
+                # Extended build metadata
+                elif 'anode' in label and 'weight' in label:
+                    try:
+                        extended_metadata['anode_weight_per_cell'] = float(value)
+                    except:
+                        pass
+                elif 'cathode' in label and 'weight' in label:
+                    try:
+                        extended_metadata['cathode_weight_per_cell'] = float(value)
+                    except:
+                        pass
+                elif 'electrolyte' in label and 'weight' in label:
+                    try:
+                        extended_metadata['electrolyte_weight'] = float(value)
+                    except:
+                        pass
+                elif 'heat' in label and 'pellet' in label and 'weight' in label:
+                    try:
+                        extended_metadata['heat_pellet_weight'] = float(value)
+                    except:
+                        pass
+                elif 'calorific' in label and 'value' in label:
+                    try:
+                        extended_metadata['calorific_value_per_gram'] = float(value)
+                    except:
+                        pass
+                elif 'cells' in label and 'series' in label:
+                    try:
+                        extended_metadata['cells_in_series'] = int(float(value))
+                    except:
+                        pass
+                elif 'stacks' in label and 'parallel' in label:
+                    try:
+                        extended_metadata['stacks_in_parallel'] = int(float(value))
+                    except:
+                        pass
         
-        if not found_header and data_start_row == 0:
+        if not found_header:
             data_start_row = 0
         
-        return metadata, standard_params, data_start_row
+        return metadata, standard_params, extended_metadata, data_start_row
     except:
-        return metadata, standard_params, 0
+        return metadata, standard_params, extended_metadata, 0
 
 def load_data(uploaded_file):
-    """Load data from uploaded CSV or Excel file with metadata and standard parameters extraction"""
+    """Load data from uploaded CSV or Excel file with complete metadata extraction"""
     try:
-        metadata, standard_params, skip_rows = extract_metadata_from_file(uploaded_file)
+        metadata, standard_params, extended_metadata, skip_rows = extract_metadata_from_file(uploaded_file)
         
         if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file, skiprows=skip_rows)
@@ -177,7 +227,7 @@ def load_data(uploaded_file):
             df = pd.read_excel(uploaded_file, skiprows=skip_rows)
         else:
             st.error("Unsupported file format. Please upload CSV or Excel files.")
-            return None, None, None
+            return None, None, None, None
         
         # Drop columns that are completely empty (all NaN)
         df = df.dropna(axis=1, how='all')
@@ -188,10 +238,10 @@ def load_data(uploaded_file):
         # Reset index after cleaning
         df = df.reset_index(drop=True)
         
-        return df, metadata, standard_params
+        return df, metadata, standard_params, extended_metadata
     except Exception as e:
         st.error(f"Error loading file: {str(e)}")
-        return None, None, None
+        return None, None, None, None
 
 def detect_columns(df):
     """Auto-detect relevant columns in the dataset"""
@@ -673,26 +723,26 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
             
             # Check each metric
             if std_max_onload_voltage and 'Max On-Load Voltage (V)' in metrics_df.columns:
-                actual = metrics_df.loc[build_name, 'Max On-Load Voltage (V)']
+                actual = safe_scalar(metrics_df.loc[build_name, 'Max On-Load Voltage (V)'])
                 if pd.notna(actual):
                     diff = actual - std_max_onload_voltage
                     report.append(f"  Max On-Load Voltage: {actual:.4f} V (Std: {std_max_onload_voltage} V, Diff: {diff:+.4f} V)")
             
             if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
-                actual = metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)']
+                actual = safe_scalar(metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)'])
                 if pd.notna(actual):
                     diff = actual - std_max_oc_voltage
                     report.append(f"  Max Open Circuit Voltage: {actual:.4f} V (Std: {std_max_oc_voltage} V, Diff: {diff:+.4f} V)")
             
             if std_activation_time_ms and 'Activation Time (Sec)' in metrics_df.columns:
-                actual_sec = metrics_df.loc[build_name, 'Activation Time (Sec)']
+                actual_sec = safe_scalar(metrics_df.loc[build_name, 'Activation Time (Sec)'])
                 if pd.notna(actual_sec):
                     std_sec = std_activation_time_ms / 1000.0  # Convert ms to seconds
                     diff = actual_sec - std_sec
                     report.append(f"  Activation Time: {actual_sec:.2f} s (Std: {std_activation_time_ms} ms = {std_sec:.2f} s, Diff: {diff:+.2f} s)")
             
             if std_duration_sec and 'Duration (Sec)' in metrics_df.columns:
-                actual_sec = metrics_df.loc[build_name, 'Duration (Sec)']
+                actual_sec = safe_scalar(metrics_df.loc[build_name, 'Duration (Sec)'])
                 if pd.notna(actual_sec):
                     diff = actual_sec - std_duration_sec
                     report.append(f"  Duration: {actual_sec:.2f} s (Target: {std_duration_sec} s, Diff: {diff:+.2f} s)")
@@ -714,8 +764,8 @@ def generate_detailed_report(metrics_df, build_names, metadata_list,
             report.append("-" * 40)
             
             for col in numeric_cols:
-                val1 = metrics_df.loc[build1, col]
-                val2 = metrics_df.loc[build2, col]
+                val1 = safe_scalar(metrics_df.loc[build1, col])
+                val2 = safe_scalar(metrics_df.loc[build2, col])
                 if pd.notna(val1) and pd.notna(val2):
                     diff = val2 - val1
                     pct_change = (diff / val1 * 100) if val1 != 0 else 0
@@ -881,26 +931,26 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             comp_data = [['Metric', 'Actual', 'Standard', 'Difference']]
             
             if std_max_onload_voltage and 'Max On-Load Voltage (V)' in metrics_df.columns:
-                actual = metrics_df.loc[build_name, 'Max On-Load Voltage (V)']
+                actual = safe_scalar(metrics_df.loc[build_name, 'Max On-Load Voltage (V)'])
                 if pd.notna(actual):
                     diff = actual - std_max_onload_voltage
                     comp_data.append(['Max On-Load V', f"{actual:.3f} V", f"{std_max_onload_voltage} V", f"{diff:+.3f} V"])
             
             if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
-                actual = metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)']
+                actual = safe_scalar(metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)'])
                 if pd.notna(actual):
                     diff = actual - std_max_oc_voltage
                     comp_data.append(['Max OC V', f"{actual:.3f} V", f"{std_max_oc_voltage} V", f"{diff:+.3f} V"])
             
             if std_activation_time and 'Activation Time (Sec)' in metrics_df.columns:
-                actual = metrics_df.loc[build_name, 'Activation Time (Sec)']
+                actual = safe_scalar(metrics_df.loc[build_name, 'Activation Time (Sec)'])
                 if pd.notna(actual):
                     diff_sec = actual - (std_activation_time_ms / 1000 if std_activation_time_ms else std_activation_time * 60)
                     std_val = f"{std_activation_time_ms} ms" if std_activation_time_ms else f"{std_activation_time} min"
                     comp_data.append(['Activation Time', f"{actual:.3f} sec", std_val, f"{diff_sec:+.3f} sec"])
             
             if std_duration and 'Duration (Sec)' in metrics_df.columns:
-                actual = metrics_df.loc[build_name, 'Duration (Sec)']
+                actual = safe_scalar(metrics_df.loc[build_name, 'Duration (Sec)'])
                 if pd.notna(actual):
                     diff_sec = actual - (std_duration_sec if std_duration_sec else std_duration * 60)
                     std_val = f"{std_duration_sec} sec" if std_duration_sec else f"{std_duration} min"
@@ -1677,7 +1727,7 @@ def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_typ
     except Exception as e:
         return False, f"Error saving comparison: {str(e)}"
 
-def update_comparison_in_db(comparison_id, name, dataframes, build_names, metrics_df, battery_type=None, extended_metadata=None, existing_password=None, new_password=None):
+def update_comparison_in_db(comparison_id, name, dataframes, build_names, metrics_df, battery_type=None, extended_metadata=None, existing_password=None, new_password=None, standard_params=None):
     """Update existing comparison in database with password verification"""
     if not Session:
         return False, "Database not configured"
@@ -1721,6 +1771,7 @@ def update_comparison_in_db(comparison_id, name, dataframes, build_names, metric
         comparison.metrics_json = metrics_json
         comparison.battery_type = battery_type
         comparison.extended_metadata_json = extended_metadata_json
+        comparison.standard_params_json = json.dumps(standard_params) if standard_params else None
         
         # Update password if new one provided
         if new_password and new_password.strip():
@@ -1772,6 +1823,19 @@ def load_comparison_from_db(comparison_id, password=None):
         build_names = json.loads(comparison.build_names)
         data_list = json.loads(comparison.data_json)
         
+        # MIGRATION: Ensure unique build names for legacy comparisons with duplicates
+        unique_build_names = []
+        seen = {}
+        for name in build_names:
+            if name in seen:
+                seen[name] += 1
+                unique_name = f"{name} ({seen[name]})"
+            else:
+                seen[name] = 0
+                unique_name = name
+            unique_build_names.append(unique_name)
+        build_names = unique_build_names
+        
         dataframes = []
         for data_json in data_list:
             df = pd.read_json(io.StringIO(data_json), orient='split')
@@ -1783,12 +1847,13 @@ def load_comparison_from_db(comparison_id, password=None):
         
         battery_type = comparison.battery_type if hasattr(comparison, 'battery_type') else None
         extended_metadata = json.loads(comparison.extended_metadata_json) if comparison.extended_metadata_json else {}
+        standard_params = json.loads(comparison.standard_params_json) if hasattr(comparison, 'standard_params_json') and comparison.standard_params_json else {}
         
         session.close()
         
-        return dataframes, build_names, metrics_df, battery_type, extended_metadata, "Loaded successfully"
+        return dataframes, build_names, metrics_df, battery_type, extended_metadata, standard_params, "Loaded successfully"
     except Exception as e:
-        return None, None, None, None, None, f"Error loading comparison: {str(e)}"
+        return None, None, None, None, None, None, f"Error loading comparison: {str(e)}"
 
 def get_all_saved_comparisons():
     """Get list of all saved comparisons with password protection status"""
@@ -1911,21 +1976,28 @@ if DATABASE_URL and Session:
             col1, col2 = st.sidebar.columns(2)
             with col1:
                 if st.button("📂 Load", key='load_btn'):
-                    loaded_dfs, loaded_names, loaded_metrics, loaded_battery_type, loaded_extended_meta, msg = load_comparison_from_db(comparison_id, password=load_password)
-                    if loaded_dfs:
-                        st.session_state['loaded_dataframes'] = loaded_dfs
-                        st.session_state['loaded_build_names'] = loaded_names
-                        st.session_state['editing_comparison_id'] = comparison_id
-                        st.session_state['editing_comparison_name'] = comp_meta['name']
-                        st.session_state['editing_comparison_protected'] = comp_meta['is_protected']
-                        if loaded_battery_type:
-                            st.session_state['loaded_battery_type_preference'] = loaded_battery_type
-                        if loaded_extended_meta:
-                            st.session_state['build_metadata_extended'] = loaded_extended_meta
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
+                    try:
+                        loaded_dfs, loaded_names, loaded_metrics, loaded_battery_type, loaded_extended_meta, loaded_standard_params, msg = load_comparison_from_db(comparison_id, password=load_password)
+                        if loaded_dfs:
+                            st.session_state['loaded_dataframes'] = loaded_dfs
+                            st.session_state['loaded_build_names'] = loaded_names
+                            st.session_state['editing_comparison_id'] = comparison_id
+                            st.session_state['editing_comparison_name'] = comp_meta['name']
+                            st.session_state['editing_comparison_protected'] = comp_meta['is_protected']
+                            if loaded_battery_type:
+                                st.session_state['loaded_battery_type_preference'] = loaded_battery_type
+                            if loaded_extended_meta:
+                                st.session_state['build_metadata_extended'] = loaded_extended_meta
+                            if loaded_standard_params:
+                                st.session_state['loaded_standard_params'] = loaded_standard_params
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                    except Exception as e:
+                        st.error(f"Error loading comparison: {str(e)}")
+                        import traceback
+                        st.error(traceback.format_exc())
             
             with col2:
                 if st.button("🗑️ Delete", key='delete_btn'):
@@ -1959,9 +2031,12 @@ if data_mode == "Upload Files":
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ Performance Specifications")
     
-    # Get extracted standard params from uploaded file, or use default
+    # Get standard params from loaded comparison, extracted file, or use defaults
+    loaded_params = st.session_state.get('loaded_standard_params', {})
     extracted_params = st.session_state.get('extracted_standard_params', {})
-    default_min_voltage = extracted_params.get('min_activation_voltage', 1.0) if extracted_params else 1.0
+    # Priority: loaded > extracted > default
+    params_source = loaded_params if loaded_params else extracted_params
+    default_min_voltage = params_source.get('min_activation_voltage', 1.0) if params_source else 1.0
     
     min_activation_voltage = st.sidebar.number_input(
         "Min. voltage for activation (V):",
@@ -1972,8 +2047,10 @@ if data_mode == "Upload Files":
         help="Minimum voltage threshold. Activation Time (Sec) = time when battery FIRST reaches ≥ this voltage. Duration (Sec) = time from first activation to last occurrence of cutoff voltage."
     )
     
-    # Show info if parameters were auto-filled from file
-    if extracted_params and any(v is not None for v in extracted_params.values()):
+    # Show info if parameters were auto-filled
+    if loaded_params and any(v is not None for v in loaded_params.values()):
+        st.sidebar.info("💾 Parameters restored from saved comparison")
+    elif extracted_params and any(v is not None for v in extracted_params.values()):
         st.sidebar.info("📄 Parameters auto-loaded from Excel file")
     
     # Optional target duration for voltage lookup
@@ -2014,10 +2091,10 @@ if data_mode == "Upload Files":
         else:
             std_max_onload_voltage = None
         
-        # Use extracted values if available, otherwise defaults
-        default_oc_voltage = extracted_params.get('std_max_oc_voltage', 1.6) if extracted_params else 1.6
-        default_activation_time_ms = extracted_params.get('std_activation_time_ms', 1000.0) if extracted_params else 1000.0
-        default_duration_sec = extracted_params.get('std_duration_sec', 400.0) if extracted_params else 400.0
+        # Use loaded/extracted values if available, otherwise defaults
+        default_oc_voltage = params_source.get('std_max_oc_voltage', 1.6) if params_source else 1.6
+        default_activation_time_ms = params_source.get('std_activation_time_ms', 1000.0) if params_source else 1000.0
+        default_duration_sec = params_source.get('std_duration_sec', 400.0) if params_source else 400.0
         
         std_max_oc_voltage = st.sidebar.number_input(
             "Std. Max Open Circuit Voltage (V):",
@@ -2213,7 +2290,7 @@ if data_mode == "Upload Files":
             
             if uploaded_file:
                 uploaded_files.append(uploaded_file)
-                df, metadata, standard_params = load_data(uploaded_file)
+                df, metadata, standard_params, file_extended_metadata = load_data(uploaded_file)
                 if df is not None:
                     if metadata and any(metadata.values()):
                         if metadata.get('build_id'):
@@ -2228,7 +2305,50 @@ if data_mode == "Upload Files":
                         if 'extracted_standard_params' not in st.session_state:
                             st.session_state['extracted_standard_params'] = standard_params
                     
-                    build_names.append(build_name)
+                    # Store extended metadata from file to auto-populate form
+                    if file_extended_metadata and any(v is not None for v in file_extended_metadata.values()):
+                        # Calculate total weights for this build
+                        cells_in_series = file_extended_metadata.get('cells_in_series', 0) or 0
+                        stacks_in_parallel = file_extended_metadata.get('stacks_in_parallel', 0) or 0
+                        anode_per_cell = file_extended_metadata.get('anode_weight_per_cell', 0) or 0
+                        cathode_per_cell = file_extended_metadata.get('cathode_weight_per_cell', 0) or 0
+                        heat_pellet = file_extended_metadata.get('heat_pellet_weight', 0) or 0
+                        electrolyte = file_extended_metadata.get('electrolyte_weight', 0) or 0
+                        calorific = file_extended_metadata.get('calorific_value_per_gram', 0) or 0
+                        
+                        # Calculate totals
+                        total_anode = anode_per_cell * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
+                        total_cathode = cathode_per_cell * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
+                        total_heat_pellet = heat_pellet * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
+                        total_electrolyte = electrolyte * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
+                        total_stack_weight = (anode_per_cell + cathode_per_cell + heat_pellet + electrolyte) * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
+                        total_calorific = total_heat_pellet * calorific * 0.004184 if calorific > 0 and total_heat_pellet > 0 else 0
+                        
+                        # Store complete extended metadata with calculated totals
+                        st.session_state['build_metadata_extended'][i] = {
+                            'anode_weight_per_cell': anode_per_cell,
+                            'cathode_weight_per_cell': cathode_per_cell,
+                            'heat_pellet_weight': heat_pellet,
+                            'electrolyte_weight': electrolyte,
+                            'cells_in_series': cells_in_series,
+                            'stacks_in_parallel': stacks_in_parallel,
+                            'calorific_value_per_gram': calorific,
+                            'total_anode_weight': total_anode,
+                            'total_cathode_weight': total_cathode,
+                            'total_heat_pellet_weight': total_heat_pellet,
+                            'total_electrolyte_weight': total_electrolyte,
+                            'total_stack_weight': total_stack_weight,
+                            'total_calorific_value': total_calorific
+                        }
+                    
+                    # Ensure unique build names to prevent duplicate indices in metrics_df
+                    unique_name = build_name
+                    counter = 1
+                    while unique_name in build_names:
+                        unique_name = f"{build_name} ({counter})"
+                        counter += 1
+                    
+                    build_names.append(unique_name)
                     dataframes.append(df)
                     metadata_list.append(metadata if metadata else {})
 
@@ -2542,60 +2662,66 @@ if len(dataframes) == num_builds and num_builds > 0:
                     )
             with col4:
                 # Generate detailed text report
-                report_text = generate_detailed_report(
-                    metrics_df, build_names, metadata_list,
-                    min_activation_voltage,
-                    use_standards, std_max_onload_voltage,
-                    std_max_oc_voltage, std_activation_time, std_duration,
-                    std_activation_time_ms, std_duration_sec
-                )
-                st.download_button(
-                    label="📄 Report",
-                    data=report_text.encode('utf-8'),
-                    file_name=f"battery_report_{timestamp}.txt",
-                    mime="text/plain"
-                )
+                try:
+                    report_text = generate_detailed_report(
+                        metrics_df, build_names, metadata_list,
+                        min_activation_voltage,
+                        use_standards, std_max_onload_voltage,
+                        std_max_oc_voltage, std_activation_time, std_duration,
+                        std_activation_time_ms, std_duration_sec
+                    )
+                    st.download_button(
+                        label="📄 Report",
+                        data=report_text.encode('utf-8'),
+                        file_name=f"battery_report_{timestamp}.txt",
+                        mime="text/plain"
+                    )
+                except Exception as e:
+                    st.error(f"Report generation error: {str(e)}")
             with col5:
-                # Prepare analytics and extended metadata for PDF
-                analytics_list_for_pdf = []
-                extended_metadata_list_for_pdf = []
-                
-                for idx, (df, name) in enumerate(zip(dataframes, build_names)):
-                    time_col, voltage_col, current_col, capacity_col = detect_columns(df)
+                try:
+                    # Prepare analytics and extended metadata for PDF
+                    analytics_list_for_pdf = []
+                    extended_metadata_list_for_pdf = []
                     
-                    # Get analytics for this build
-                    analytics = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
-                    analytics_list_for_pdf.append(analytics)
+                    for idx, (df, name) in enumerate(zip(dataframes, build_names)):
+                        time_col, voltage_col, current_col, capacity_col = detect_columns(df)
+                        
+                        # Get analytics for this build
+                        analytics = calculate_advanced_analytics(df, time_col, voltage_col, current_col)
+                        analytics_list_for_pdf.append(analytics)
+                        
+                        # Get extended metadata for this build
+                        ext_meta = st.session_state.get('build_metadata_extended', {}).get(idx, {})
+                        extended_metadata_list_for_pdf.append(ext_meta)
                     
-                    # Get extended metadata for this build
-                    ext_meta = st.session_state.get('build_metadata_extended', {}).get(idx, {})
-                    extended_metadata_list_for_pdf.append(ext_meta)
-                
-                # Calculate correlations if we have enough data
-                correlations_for_pdf = None
-                duration_correlations_for_pdf = None
-                if len(all_build_metrics) >= 2:
-                    correlations_for_pdf = calculate_correlation_analysis(all_build_metrics, analytics_list_for_pdf)
-                    duration_correlations_for_pdf = calculate_duration_correlations(all_build_metrics, extended_metadata_list_for_pdf)
-                
-                # Generate PDF report
-                pdf_data = generate_pdf_report(
-                    metrics_df, build_names, metadata_list,
-                    min_activation_voltage,
-                    use_standards, std_max_onload_voltage,
-                    std_max_oc_voltage, std_activation_time, std_duration,
-                    std_activation_time_ms, std_duration_sec,
-                    extended_metadata_list_for_pdf,
-                    analytics_list_for_pdf,
-                    correlations_for_pdf,
-                    duration_correlations_for_pdf
-                )
-                st.download_button(
-                    label="📕 PDF",
-                    data=pdf_data,
-                    file_name=f"battery_report_{timestamp}.pdf",
-                    mime="application/pdf"
-                )
+                    # Calculate correlations if we have enough data
+                    correlations_for_pdf = None
+                    duration_correlations_for_pdf = None
+                    if len(all_build_metrics) >= 2:
+                        correlations_for_pdf = calculate_correlation_analysis(all_build_metrics, analytics_list_for_pdf)
+                        duration_correlations_for_pdf = calculate_duration_correlations(all_build_metrics, extended_metadata_list_for_pdf)
+                    
+                    # Generate PDF report
+                    pdf_data = generate_pdf_report(
+                        metrics_df, build_names, metadata_list,
+                        min_activation_voltage,
+                        use_standards, std_max_onload_voltage,
+                        std_max_oc_voltage, std_activation_time, std_duration,
+                        std_activation_time_ms, std_duration_sec,
+                        extended_metadata_list_for_pdf,
+                        analytics_list_for_pdf,
+                        correlations_for_pdf,
+                        duration_correlations_for_pdf
+                    )
+                    st.download_button(
+                        label="📕 PDF",
+                        data=pdf_data,
+                        file_name=f"battery_report_{timestamp}.pdf",
+                        mime="application/pdf"
+                    )
+                except Exception as e:
+                    st.error(f"PDF generation error: {str(e)}")
             with col6:
                 if DATABASE_URL and Session:
                     # Save/Update comparison form
@@ -2669,6 +2795,14 @@ if len(dataframes) == num_builds and num_builds > 0:
                                 current_battery_type = st.session_state.get('battery_type', 'General')
                                 current_extended_meta = st.session_state.get('build_metadata_extended', {})
                                 
+                                # Collect current standard params (from loaded or current state)
+                                current_standard_params = {
+                                    'min_activation_voltage': min_activation_voltage,
+                                    'std_max_oc_voltage': std_max_oc_voltage,
+                                    'std_activation_time_ms': std_activation_time_ms if use_standards else None,
+                                    'std_duration_sec': std_duration_sec if use_standards else None
+                                }
+                                
                                 if update_clicked:
                                     # Update existing comparison
                                     comparison_id = st.session_state.get('editing_comparison_id')
@@ -2681,7 +2815,8 @@ if len(dataframes) == num_builds and num_builds > 0:
                                         battery_type=current_battery_type,
                                         extended_metadata=current_extended_meta,
                                         existing_password=existing_password_for_update,
-                                        new_password=save_password if protect_with_password else None
+                                        new_password=save_password if protect_with_password else None,
+                                        standard_params=current_standard_params
                                     )
                                 else:
                                     # Save as new comparison
@@ -2692,7 +2827,8 @@ if len(dataframes) == num_builds and num_builds > 0:
                                         metrics_df,
                                         battery_type=current_battery_type,
                                         extended_metadata=current_extended_meta,
-                                        password=save_password if protect_with_password else None
+                                        password=save_password if protect_with_password else None,
+                                        standard_params=current_standard_params
                                     )
                                 
                                 if success:
@@ -2747,6 +2883,15 @@ if len(dataframes) == num_builds and num_builds > 0:
                         val1 = metrics_df.loc[build1, col]
                         val2 = metrics_df.loc[build2, col]
                         diff = val2 - val1
+                        
+                        # Handle both scalar and Series cases
+                        if isinstance(val1, pd.Series):
+                            val1 = val1.iloc[0] if len(val1) > 0 else 0
+                        if isinstance(val2, pd.Series):
+                            val2 = val2.iloc[0] if len(val2) > 0 else 0
+                        if isinstance(diff, pd.Series):
+                            diff = diff.iloc[0] if len(diff) > 0 else 0
+                        
                         pct_change = (diff / val1 * 100) if val1 != 0 else 0
                         
                         comparison_data.append({
@@ -2777,7 +2922,7 @@ if len(dataframes) == num_builds and num_builds > 0:
                         
                         # Max On-Load Voltage comparison
                         if std_max_onload_voltage and 'Max On-Load Voltage (V)' in metrics_df.columns:
-                            actual = metrics_df.loc[build_name, 'Max On-Load Voltage (V)']
+                            actual = safe_scalar(metrics_df.loc[build_name, 'Max On-Load Voltage (V)'])
                             if pd.notna(actual):
                                 diff = actual - std_max_onload_voltage
                                 build_data['Max On-Load V (Actual)'] = actual
@@ -2786,7 +2931,7 @@ if len(dataframes) == num_builds and num_builds > 0:
                         
                         # Max Open Circuit Voltage comparison
                         if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
-                            actual = metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)']
+                            actual = safe_scalar(metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)'])
                             if pd.notna(actual):
                                 diff = actual - std_max_oc_voltage
                                 build_data['Max OC V (Actual)'] = actual
@@ -2795,7 +2940,7 @@ if len(dataframes) == num_builds and num_builds > 0:
                         
                         # Activation Time comparison (in seconds)
                         if std_activation_time_ms and 'Activation Time (Sec)' in metrics_df.columns:
-                            actual_sec = metrics_df.loc[build_name, 'Activation Time (Sec)']
+                            actual_sec = safe_scalar(metrics_df.loc[build_name, 'Activation Time (Sec)'])
                             if pd.notna(actual_sec):
                                 std_sec = std_activation_time_ms / 1000.0  # Convert ms to seconds
                                 diff = actual_sec - std_sec
@@ -2805,7 +2950,7 @@ if len(dataframes) == num_builds and num_builds > 0:
                         
                         # Duration comparison (in seconds)
                         if std_duration_sec and 'Duration (Sec)' in metrics_df.columns:
-                            actual_sec = metrics_df.loc[build_name, 'Duration (Sec)']
+                            actual_sec = safe_scalar(metrics_df.loc[build_name, 'Duration (Sec)'])
                             if pd.notna(actual_sec):
                                 diff = actual_sec - std_duration_sec
                                 build_data['Duration (Actual s)'] = actual_sec
