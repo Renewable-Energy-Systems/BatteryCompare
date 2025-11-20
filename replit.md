@@ -77,3 +77,28 @@ Preferred communication style: Simple, everyday language.
 **Verification**: Database query confirms data persistence; save/load workflow tested end-to-end successfully.
 
 **Migration Fix**: Loader-side deduplication automatically handles legacy comparisons with duplicate build names, ensuring backward compatibility. All saved comparisons (new and old) work reliably.
+
+### Session State Restructuring & UI Improvements (November 20, 2025) ✅
+**Core Fix**: Resolved Streamlit session_state modification error and improved UI responsiveness.
+
+**Three-Pass Upload Architecture**:
+- **Pass 1** (Lines 2222-2259): File upload collection and metadata extraction
+  - File uploader widgets collect files
+  - Metadata extracted from Excel immediately
+  - Session_state keys updated BEFORE form widgets are rendered
+  - File tracking via `file_processed_{i}_{file_id}` prevents duplicate processing
+- **Pass 2** (Lines 2261-2361): Form widget rendering
+  - Extended Build Metadata forms rendered using pre-populated session_state values
+  - Widgets automatically display extracted data
+  - No session_state modification after widget instantiation
+- **Pass 3** (Lines 2363-2392): Data analysis processing
+  - Uploaded files processed for discharge curve analysis
+  - Build names extracted and deduplicated
+  - Standard parameters captured for auto-population
+
+**UI Improvements**:
+- Save form layout changed to full-width (removed 6-column compression) for better responsiveness
+- PDF report table headers use Paragraph objects with text wrapping enabled
+- All form fields properly aligned without text wrapping issues
+
+**Verification**: End-to-end Playwright tests confirm metadata auto-extraction (anode: 0.70g, cathode: 1.75g, cells: 18, stacks: 4) and zero session_state errors. Architect review passed with recommendation to document three-pass flow for maintainers.
