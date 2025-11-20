@@ -81,24 +81,25 @@ Preferred communication style: Simple, everyday language.
 ### Session State Restructuring & UI Improvements (November 20, 2025) ✅
 **Core Fix**: Resolved Streamlit session_state modification error and improved UI responsiveness.
 
-**Three-Pass Upload Architecture**:
-- **Pass 1** (Lines 2222-2259): File upload collection and metadata extraction
-  - File uploader widgets collect files
-  - Metadata extracted from Excel immediately
-  - Session_state keys updated BEFORE form widgets are rendered
-  - File tracking via `file_processed_{i}_{file_id}` prevents duplicate processing
-- **Pass 2** (Lines 2261-2361): Form widget rendering
-  - Extended Build Metadata forms rendered using pre-populated session_state values
-  - Widgets automatically display extracted data
-  - No session_state modification after widget instantiation
-- **Pass 3** (Lines 2363-2392): Data analysis processing
-  - Uploaded files processed for discharge curve analysis
-  - Build names extracted and deduplicated
-  - Standard parameters captured for auto-population
+**Integrated Upload Architecture** (Lines 2222-2361):
+- Single-loop design processes each build completely before moving to next
+- For each build:
+  1. Render build header, name input, and file uploader
+  2. Extract metadata from uploaded file and update session_state (BEFORE form widgets)
+  3. Render Extended Build Metadata form immediately (uses pre-populated session_state)
+- File tracking via `file_processed_{i}_{file_id}` prevents duplicate processing
+- Separate pass (Lines 2363-2392) processes files for discharge curve analysis
 
 **UI Improvements**:
+- Sidebar set to `initial_sidebar_state="expanded"` to prevent collapse
+- Metadata forms appear directly under each build's file uploader (proper visual grouping)
 - Save form layout changed to full-width (removed 6-column compression) for better responsiveness
 - PDF report table headers use Paragraph objects with text wrapping enabled
 - All form fields properly aligned without text wrapping issues
 
-**Verification**: End-to-end Playwright tests confirm metadata auto-extraction (anode: 0.70g, cathode: 1.75g, cells: 18, stacks: 4) and zero session_state errors. Architect review passed with recommendation to document three-pass flow for maintainers.
+**Verification**: End-to-end Playwright tests confirm:
+- Sidebar is visible and expanded on page load
+- Metadata auto-extraction works correctly (anode: 0.70g, cathode: 1.75g, cells: 18, stacks: 4)
+- Forms appear in correct location (under respective builds, not at end)
+- Zero session_state errors
+- No duplicate forms at end of sidebar

@@ -71,7 +71,7 @@ else:
 # Initialize password hasher for secure password storage
 ph = PasswordHasher()
 
-st.set_page_config(page_title="Battery Discharge Analysis", layout="wide")
+st.set_page_config(page_title="Battery Discharge Analysis", layout="wide", initial_sidebar_state="expanded")
 
 st.title("🔋 Battery Discharge Data Analysis")
 st.markdown("Compare discharge curves and performance metrics across different builds")
@@ -2216,7 +2216,7 @@ if data_mode == "Upload Files":
                 del st.session_state['loaded_battery_type_preference']
             st.rerun()
     else:
-        # PASS 1: Collect file uploads and extract metadata BEFORE rendering form widgets
+        # Render build sections with integrated metadata extraction and form rendering
         uploaded_files = []
         for i in range(num_builds):
             st.sidebar.markdown(f"### Build {i+1}")
@@ -2228,7 +2228,7 @@ if data_mode == "Upload Files":
             )
             uploaded_files.append(uploaded_file)
             
-            # Process uploaded file and extract metadata BEFORE widgets are rendered
+            # Process uploaded file and extract metadata BEFORE form widgets are rendered
             if uploaded_file and f'file_processed_{i}_{uploaded_file.file_id}' not in st.session_state:
                 try:
                     df, metadata, standard_params, file_extended_metadata = load_data(uploaded_file)
@@ -2254,9 +2254,8 @@ if data_mode == "Upload Files":
                         st.info(f"✅ Metadata extracted from Excel file for Build {i+1}")
                 except Exception as e:
                     st.error(f"Error processing file for Build {i+1}: {str(e)}")
-        
-        # PASS 2: Render form widgets (they will use the updated session_state values)
-        for i in range(num_builds):
+            
+            # Render metadata form for this build (appears right after its file uploader)
             with st.sidebar.expander("⚙️ Extended Build Metadata (Optional)", expanded=False):
                 st.markdown("**Weight Inputs (per cell)**")
                 col1, col2 = st.columns(2)
