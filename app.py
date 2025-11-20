@@ -37,20 +37,29 @@ class SavedComparison(Base):
     battery_type = Column(String(100), nullable=True)  # New: battery type (General, Madhava, etc.)
     extended_metadata_json = Column(Text, nullable=True)  # New: extended build metadata (weights, calorific value, etc.)
     password_hash = Column(String(128), nullable=True)  # Optional password protection
+    standard_params_json = Column(Text, nullable=True)  # Standard benchmark parameters (min voltage, std activation time, etc.)
 
 if DATABASE_URL:
     engine = create_engine(DATABASE_URL)
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     
-    # Run migration to add password_hash column if it doesn't exist
+    # Run migrations to add new columns if they don't exist
     try:
         inspector = inspect(engine)
         if 'saved_comparisons' in inspector.get_table_names():
             columns = [col['name'] for col in inspector.get_columns('saved_comparisons')]
+            
+            # Add password_hash column
             if 'password_hash' not in columns:
                 with engine.connect() as conn:
                     conn.execute(text("ALTER TABLE saved_comparisons ADD COLUMN password_hash VARCHAR(128)"))
+                    conn.commit()
+            
+            # Add standard_params_json column
+            if 'standard_params_json' not in columns:
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE saved_comparisons ADD COLUMN standard_params_json TEXT"))
                     conn.commit()
     except Exception as e:
         # Migration error - log but continue to allow app to run
@@ -69,17 +78,24 @@ st.markdown("Compare discharge curves and performance metrics across different b
 
 def extract_metadata_from_file(uploaded_file):
     """
-    Extract metadata from the top rows of the file.
+    Extract metadata and standard parameters from the top rows of the file.
     Supports two formats:
     1. Metadata in columns 0-1 (original format)
     2. Metadata in columns 4-5 (new format with empty leading columns)
     
-    Returns: (metadata_dict, data_start_row)
+    Returns: (metadata_dict, standard_params_dict, data_start_row)
     """
     metadata = {
         'battery_code': None,
         'temperature': None,
         'build_id': None
+    }
+    
+    standard_params = {
+        'min_activation_voltage': None,
+        'std_max_oc_voltage': None,
+        'std_activation_time_ms': None,
+        'std_duration_sec': None
     }
     
     try:
@@ -88,7 +104,7 @@ def extract_metadata_from_file(uploaded_file):
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
             temp_df = pd.read_excel(uploaded_file, nrows=10, header=None)
         else:
-            return metadata, 0
+            return metadata, standard_params, 0
         
         uploaded_file.seek(0)
         
@@ -108,29 +124,52 @@ def extract_metadata_from_file(uploaded_file):
                 found_header = True
                 break
             
-            # Check for metadata in any column pair
+            # Check for metadata and standard parameters in any column pair
             for col_idx in range(len(row) - 1):
                 label = str(row[col_idx]).lower() if pd.notna(row[col_idx]) else ""
                 value = row[col_idx + 1]
                 
+                # Basic metadata
                 if 'battery' in label and 'code' in label and pd.notna(value):
                     metadata['battery_code'] = str(value)
                 elif ('temperature' in label or 'temp' in label) and pd.notna(value):
                     metadata['temperature'] = str(value)
                 elif 'build' in label and ('number' in label or 'id' in label) and pd.notna(value):
                     metadata['build_id'] = str(value)
+                
+                # Standard benchmark parameters
+                elif 'min' in label and 'voltage' in label and 'activ' in label and pd.notna(value):
+                    try:
+                        standard_params['min_activation_voltage'] = float(value)
+                    except:
+                        pass
+                elif 'std' in label and 'max' in label and ('open' in label or 'oc' in label or 'circuit' in label) and pd.notna(value):
+                    try:
+                        standard_params['std_max_oc_voltage'] = float(value)
+                    except:
+                        pass
+                elif 'std' in label and 'max' in label and 'activ' in label and 'time' in label and pd.notna(value):
+                    try:
+                        standard_params['std_activation_time_ms'] = float(value)
+                    except:
+                        pass
+                elif 'target' in label and 'min' in label and 'duration' in label and pd.notna(value):
+                    try:
+                        standard_params['std_duration_sec'] = float(value)
+                    except:
+                        pass
         
         if not found_header and data_start_row == 0:
             data_start_row = 0
         
-        return metadata, data_start_row
+        return metadata, standard_params, data_start_row
     except:
-        return metadata, 0
+        return metadata, standard_params, 0
 
 def load_data(uploaded_file):
-    """Load data from uploaded CSV or Excel file with metadata extraction"""
+    """Load data from uploaded CSV or Excel file with metadata and standard parameters extraction"""
     try:
-        metadata, skip_rows = extract_metadata_from_file(uploaded_file)
+        metadata, standard_params, skip_rows = extract_metadata_from_file(uploaded_file)
         
         if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file, skiprows=skip_rows)
@@ -138,7 +177,7 @@ def load_data(uploaded_file):
             df = pd.read_excel(uploaded_file, skiprows=skip_rows)
         else:
             st.error("Unsupported file format. Please upload CSV or Excel files.")
-            return None, None
+            return None, None, None
         
         # Drop columns that are completely empty (all NaN)
         df = df.dropna(axis=1, how='all')
@@ -149,10 +188,10 @@ def load_data(uploaded_file):
         # Reset index after cleaning
         df = df.reset_index(drop=True)
         
-        return df, metadata
+        return df, metadata, standard_params
     except Exception as e:
         st.error(f"Error loading file: {str(e)}")
-        return None, None
+        return None, None, None
 
 def detect_columns(df):
     """Auto-detect relevant columns in the dataset"""
@@ -1592,8 +1631,8 @@ def detect_anomalies(df, voltage_col, time_col=None):
     
     return anomalies, all_anomaly_indices
 
-def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_type=None, extended_metadata=None, password=None):
-    """Save comparison to database with optional password protection"""
+def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_type=None, extended_metadata=None, password=None, standard_params=None):
+    """Save comparison to database with optional password protection and standard parameters"""
     if not Session:
         return False, "Database not configured"
     
@@ -1606,6 +1645,7 @@ def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_typ
         
         metrics_json = metrics_df.to_json(orient='split') if metrics_df is not None else None
         extended_metadata_json = json.dumps(extended_metadata) if extended_metadata else None
+        standard_params_json = json.dumps(standard_params) if standard_params else None
         
         # Hash password if provided
         password_hash = None
@@ -1624,7 +1664,8 @@ def save_comparison_to_db(name, dataframes, build_names, metrics_df, battery_typ
             metrics_json=metrics_json,
             battery_type=battery_type,
             extended_metadata_json=extended_metadata_json,
-            password_hash=password_hash
+            password_hash=password_hash,
+            standard_params_json=standard_params_json
         )
         
         session.add(comparison)
@@ -1918,14 +1959,22 @@ if data_mode == "Upload Files":
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ Performance Specifications")
     
+    # Get extracted standard params from uploaded file, or use default
+    extracted_params = st.session_state.get('extracted_standard_params', {})
+    default_min_voltage = extracted_params.get('min_activation_voltage', 1.0) if extracted_params else 1.0
+    
     min_activation_voltage = st.sidebar.number_input(
         "Min. voltage for activation (V):",
         min_value=0.0,
         max_value=100.0,
-        value=1.0,
+        value=float(default_min_voltage),
         step=0.1,
         help="Minimum voltage threshold. Activation Time (Sec) = time when battery FIRST reaches ≥ this voltage. Duration (Sec) = time from first activation to last occurrence of cutoff voltage."
     )
+    
+    # Show info if parameters were auto-filled from file
+    if extracted_params and any(v is not None for v in extracted_params.values()):
+        st.sidebar.info("📄 Parameters auto-loaded from Excel file")
     
     # Optional target duration for voltage lookup
     use_target_duration = st.sidebar.checkbox(
@@ -1965,11 +2014,16 @@ if data_mode == "Upload Files":
         else:
             std_max_onload_voltage = None
         
+        # Use extracted values if available, otherwise defaults
+        default_oc_voltage = extracted_params.get('std_max_oc_voltage', 1.6) if extracted_params else 1.6
+        default_activation_time_ms = extracted_params.get('std_activation_time_ms', 1000.0) if extracted_params else 1000.0
+        default_duration_sec = extracted_params.get('std_duration_sec', 400.0) if extracted_params else 400.0
+        
         std_max_oc_voltage = st.sidebar.number_input(
             "Std. Max Open Circuit Voltage (V):",
             min_value=0.0,
             max_value=100.0,
-            value=1.6,
+            value=float(default_oc_voltage),
             step=0.1
         )
         
@@ -1977,7 +2031,7 @@ if data_mode == "Upload Files":
             "Std. Max Activation Time (ms):",
             min_value=0.0,
             max_value=100000.0,
-            value=1000.0,
+            value=float(default_activation_time_ms),
             step=10.0,
             help="Maximum acceptable time to reach min voltage in milliseconds"
         )
@@ -1988,7 +2042,7 @@ if data_mode == "Upload Files":
             "Target Min Duration (s):",
             min_value=0.0,
             max_value=100000.0,
-            value=400.0,
+            value=float(default_duration_sec),
             step=10.0,
             help="Target minimum acceptable discharge duration in seconds"
         )
@@ -2159,7 +2213,7 @@ if data_mode == "Upload Files":
             
             if uploaded_file:
                 uploaded_files.append(uploaded_file)
-                df, metadata = load_data(uploaded_file)
+                df, metadata, standard_params = load_data(uploaded_file)
                 if df is not None:
                     if metadata and any(metadata.values()):
                         if metadata.get('build_id'):
@@ -2168,6 +2222,11 @@ if data_mode == "Upload Files":
                             build_name += f" ({metadata['battery_code']})"
                         if metadata.get('temperature'):
                             build_name += f" @ {metadata['temperature']}"
+                    
+                    # Store standard parameters from first file that has them
+                    if standard_params and any(v is not None for v in standard_params.values()):
+                        if 'extracted_standard_params' not in st.session_state:
+                            st.session_state['extracted_standard_params'] = standard_params
                     
                     build_names.append(build_name)
                     dataframes.append(df)
