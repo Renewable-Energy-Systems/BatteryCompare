@@ -2349,6 +2349,12 @@ if data_mode == "Upload Files":
                             'total_stack_weight': total_stack_weight,
                             'total_calorific_value': total_calorific
                         }
+                        
+                        # Trigger rerun to populate form fields with extracted metadata
+                        if f'metadata_extracted_{i}' not in st.session_state:
+                            st.session_state[f'metadata_extracted_{i}'] = True
+                            st.info(f"✅ Metadata extracted from Excel file for Build {i+1}")
+                            st.rerun()
                     
                     # Ensure unique build names to prevent duplicate indices in metrics_df
                     unique_name = build_name
@@ -2746,7 +2752,7 @@ if len(dataframes) == num_builds and num_builds > 0:
                         
                         # Password protection options
                         protect_with_password = st.checkbox(
-                            "🔐 Protect with password",
+                            "🔐 Password protect",
                             value=False,
                             help="Add password protection to this comparison"
                         )
@@ -2861,7 +2867,21 @@ if len(dataframes) == num_builds and num_builds > 0:
                 else:
                     return str(val)
             
-            st.dataframe(metrics_df.map(format_value), use_container_width=True)
+            # Configure column display for better header wrapping
+            column_config = {}
+            for col in metrics_df.columns:
+                column_config[col] = st.column_config.TextColumn(
+                    col,
+                    width="medium",
+                    help=None
+                )
+            
+            st.dataframe(
+                metrics_df.map(format_value), 
+                use_container_width=True,
+                column_config=column_config,
+                height=400
+            )
             
             st.subheader("Statistical Summary")
             
@@ -3157,9 +3177,31 @@ if len(dataframes) == num_builds and num_builds > 0:
     with tab5:
         st.header("Data Preview")
         
-        for df, name in zip(dataframes, build_names):
+        for idx, (df, name) in enumerate(zip(dataframes, build_names)):
             with st.expander(f"📄 {name} - Data Preview ({len(df)} rows)"):
                 time_col, voltage_col, current_col, capacity_col = detect_columns(df)
+                
+                # Display extracted metadata if available
+                build_meta = st.session_state.get('build_metadata_extended', {}).get(idx, {})
+                if build_meta and any(v and v != 0 for v in build_meta.values()):
+                    st.markdown("**📋 Extracted Metadata:**")
+                    meta_cols = st.columns(3)
+                    with meta_cols[0]:
+                        if build_meta.get('anode_weight_per_cell'):
+                            st.metric("Anode (per cell)", f"{build_meta['anode_weight_per_cell']:.2f} g")
+                        if build_meta.get('cathode_weight_per_cell'):
+                            st.metric("Cathode (per cell)", f"{build_meta['cathode_weight_per_cell']:.2f} g")
+                    with meta_cols[1]:
+                        if build_meta.get('cells_in_series'):
+                            st.metric("Cells in Series", f"{build_meta['cells_in_series']}")
+                        if build_meta.get('stacks_in_parallel'):
+                            st.metric("Stacks in Parallel", f"{build_meta['stacks_in_parallel']}")
+                    with meta_cols[2]:
+                        if build_meta.get('calorific_value_per_gram'):
+                            st.metric("Calorific Value", f"{build_meta['calorific_value_per_gram']:.0f} cal/g")
+                        if build_meta.get('total_stack_weight'):
+                            st.metric("Total Stack Weight", f"{build_meta['total_stack_weight']:.2f} g")
+                    st.markdown("---")
                 
                 st.markdown("**Detected Columns:**")
                 col_info = f"- Time: `{time_col if time_col else 'Not detected'}`\n"
