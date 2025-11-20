@@ -819,6 +819,16 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         spaceAfter=6,
         spaceBefore=12
     )
+    # Header style for table headers with word wrapping
+    table_header_style = ParagraphStyle(
+        'TableHeader',
+        parent=styles['Normal'],
+        fontSize=9,
+        fontName='Helvetica-Bold',
+        textColor=rl_colors.whitesmoke,
+        alignment=TA_CENTER,
+        wordWrap='CJK'
+    )
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -845,7 +855,8 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
     story.append(Spacer(1, 0.2*inch))
     
     story.append(Paragraph("Build Information", heading_style))
-    build_data = [['Build', 'Battery Code', 'Temperature', 'Build ID']]
+    build_data = [[Paragraph('Build', table_header_style), Paragraph('Battery Code', table_header_style), 
+                   Paragraph('Temperature', table_header_style), Paragraph('Build ID', table_header_style)]]
     for i, (name, metadata) in enumerate(zip(build_names, metadata_list if metadata_list else [{}]*len(build_names))):
         build_data.append([
             name,
@@ -874,7 +885,12 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         key_metrics = ['Max On-Load Voltage (V)', 'Max Open Circuit Voltage (V)', 
                       'Activation Time (Sec)', 'Duration (Sec)']
         
-        metrics_data = [['Build'] + [m for m in key_metrics if m in metrics_df.columns]]
+        # Wrap headers in Paragraph objects for word wrapping
+        header_row = [Paragraph('Build', table_header_style)]
+        for m in key_metrics:
+            if m in metrics_df.columns:
+                header_row.append(Paragraph(m, table_header_style))
+        metrics_data = [header_row]
         
         for build_name in metrics_df.index:
             row = [build_name]
@@ -1037,7 +1053,12 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             story.append(Paragraph("Advanced Performance Metrics", heading_style))
             story.append(Spacer(1, 0.1*inch))
             
-            adv_data = [['Build'] + [m for m in advanced_metrics if m in metrics_df.columns]]
+            # Wrap headers in Paragraph objects for word wrapping
+            header_row = [Paragraph('Build', table_header_style)]
+            for m in advanced_metrics:
+                if m in metrics_df.columns:
+                    header_row.append(Paragraph(m, table_header_style))
+            adv_data = [header_row]
             
             for build_name in metrics_df.index:
                 row = [build_name]
@@ -1107,7 +1128,9 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         story.append(Paragraph("Correlation Analysis", heading_style))
         story.append(Spacer(1, 0.1*inch))
         
-        corr_data = [['Relationship', 'Correlation', 'P-Value', 'Strength', 'Significance']]
+        corr_data = [[Paragraph('Relationship', table_header_style), Paragraph('Correlation', table_header_style), 
+                      Paragraph('P-Value', table_header_style), Paragraph('Strength', table_header_style), 
+                      Paragraph('Significance', table_header_style)]]
         
         for corr_name, corr_info in correlations.items():
             corr_data.append([
@@ -1156,7 +1179,9 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             story.append(Paragraph("<b>Actual Values Used in Analysis:</b>", styles['Normal']))
             story.append(Spacer(1, 0.05*inch))
             
-            values_table_data = [['Build', 'Duration (s)', 'Total Anode (g)', 'Total Cathode (g)', 'Total Calorific (kJ)']]
+            values_table_data = [[Paragraph('Build', table_header_style), Paragraph('Duration (s)', table_header_style), 
+                                  Paragraph('Total Anode (g)', table_header_style), Paragraph('Total Cathode (g)', table_header_style), 
+                                  Paragraph('Total Calorific (kJ)', table_header_style)]]
             for idx, row_dict in enumerate(duration_correlations['values_table']):
                 values_table_data.append([
                     f"Build {idx+1}",
@@ -1181,7 +1206,9 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             story.append(Spacer(1, 0.2*inch))
         
         # Duration correlation results table
-        dur_corr_data = [['Relationship', 'Correlation', 'P-Value', 'Strength', 'Significance']]
+        dur_corr_data = [[Paragraph('Relationship', table_header_style), Paragraph('Correlation', table_header_style), 
+                          Paragraph('P-Value', table_header_style), Paragraph('Strength', table_header_style), 
+                          Paragraph('Significance', table_header_style)]]
         
         for corr_name, corr_info in duration_correlations.items():
             if corr_name != 'values_table':
