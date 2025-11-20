@@ -2652,26 +2652,30 @@ if len(dataframes) == num_builds and num_builds > 0:
             metrics_df = pd.DataFrame(all_build_metrics)
             metrics_df = metrics_df.set_index('Build')
             
-            col1, col2, col3, col4, col5, col6 = st.columns([0.5, 1, 1, 1, 1, 1])
-            with col2:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Export buttons row
+            export_col1, export_col2, export_col3, export_col4 = st.columns(4)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            with export_col1:
                 excel_data = export_to_excel(dataframes, build_names, metrics_df)
                 st.download_button(
                     label="📥 Excel",
                     data=excel_data,
                     file_name=f"battery_analysis_{timestamp}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
                 )
-            with col3:
+            with export_col2:
                 csv_data = export_to_csv(dataframes, build_names, metrics_df)
                 if csv_data:
                     st.download_button(
                         label="📥 CSV",
                         data=csv_data,
                         file_name=f"battery_metrics_{timestamp}.csv",
-                        mime="text/csv"
+                        mime="text/csv",
+                        use_container_width=True
                     )
-            with col4:
+            with export_col3:
                 # Generate detailed text report
                 try:
                     report_text = generate_detailed_report(
@@ -2685,11 +2689,12 @@ if len(dataframes) == num_builds and num_builds > 0:
                         label="📄 Report",
                         data=report_text.encode('utf-8'),
                         file_name=f"battery_report_{timestamp}.txt",
-                        mime="text/plain"
+                        mime="text/plain",
+                        use_container_width=True
                     )
                 except Exception as e:
                     st.error(f"Report generation error: {str(e)}")
-            with col5:
+            with export_col4:
                 try:
                     # Prepare analytics and extended metadata for PDF
                     analytics_list_for_pdf = []
@@ -2729,130 +2734,133 @@ if len(dataframes) == num_builds and num_builds > 0:
                         label="📕 PDF",
                         data=pdf_data,
                         file_name=f"battery_report_{timestamp}.pdf",
-                        mime="application/pdf"
+                        mime="application/pdf",
+                        use_container_width=True
                     )
                 except Exception as e:
                     st.error(f"PDF generation error: {str(e)}")
-            with col6:
-                if DATABASE_URL and Session:
-                    # Save/Update comparison form
-                    is_editing = 'editing_comparison_id' in st.session_state
-                    default_name = st.session_state.get('editing_comparison_name', f"Comparison_{timestamp}")
+            
+            # Save form row (full width for better layout)
+            st.markdown("---")
+            if DATABASE_URL and Session:
+                # Save/Update comparison form
+                is_editing = 'editing_comparison_id' in st.session_state
+                default_name = st.session_state.get('editing_comparison_name', f"Comparison_{timestamp}")
+                
+                with st.form(key='save_comparison_form'):
+                    comparison_name = st.text_input(
+                        "Comparison name:",
+                        value=default_name,
+                        help="Enter a name for this comparison"
+                    )
                     
-                    with st.form(key='save_comparison_form'):
-                        comparison_name = st.text_input(
-                            "Comparison name:",
-                            value=default_name,
-                            help="Enter a name for this comparison"
+                    # Password protection options
+                    protect_with_password = st.checkbox(
+                        "🔐 Password protect",
+                        value=False,
+                        help="Add password protection to this comparison"
+                    )
+                    
+                    save_password = None
+                    save_password_confirm = None
+                    existing_password_for_update = None
+                    
+                    if protect_with_password:
+                        st.warning("⚠️ **Warning**: If you forget this password, you will permanently lose access to this comparison. There is no password recovery.")
+                        save_password = st.text_input(
+                            "Password:",
+                            type="password",
+                            help="Enter a password to protect this comparison"
                         )
-                        
-                        # Password protection options
-                        protect_with_password = st.checkbox(
-                            "🔐 Password protect",
-                            value=False,
-                            help="Add password protection to this comparison"
+                        save_password_confirm = st.text_input(
+                            "Confirm password:",
+                            type="password",
+                            help="Re-enter the password to confirm"
                         )
-                        
-                        save_password = None
-                        save_password_confirm = None
-                        existing_password_for_update = None
-                        
+                    
+                    # For editing protected comparisons, require existing password
+                    if is_editing and st.session_state.get('editing_comparison_protected', False):
+                        st.info("📝 This is a protected comparison. Enter the existing password to update it.")
+                        existing_password_for_update = st.text_input(
+                            "Existing password:",
+                            type="password",
+                            help="Enter the current password for this comparison"
+                        )
                         if protect_with_password:
-                            st.warning("⚠️ **Warning**: If you forget this password, you will permanently lose access to this comparison. There is no password recovery.")
-                            save_password = st.text_input(
-                                "Password:",
-                                type="password",
-                                help="Enter a password to protect this comparison"
-                            )
-                            save_password_confirm = st.text_input(
-                                "Confirm password:",
-                                type="password",
-                                help="Re-enter the password to confirm"
-                            )
-                        
-                        # For editing protected comparisons, require existing password
-                        if is_editing and st.session_state.get('editing_comparison_protected', False):
-                            st.info("📝 This is a protected comparison. Enter the existing password to update it.")
-                            existing_password_for_update = st.text_input(
-                                "Existing password:",
-                                type="password",
-                                help="Enter the current password for this comparison"
-                            )
-                            if protect_with_password:
-                                st.info("💡 Tip: Enter a new password above to change it, or leave blank to keep the existing password.")
-                        
-                        # Show appropriate save buttons
-                        col_save1, col_save2 = st.columns(2)
-                        
-                        with col_save1:
-                            if is_editing:
-                                update_clicked = st.form_submit_button("🔄 Update Existing", use_container_width=True)
+                            st.info("💡 Tip: Enter a new password above to change it, or leave blank to keep the existing password.")
+                    
+                    # Show appropriate save buttons
+                    col_save1, col_save2 = st.columns(2)
+                    
+                    with col_save1:
+                        if is_editing:
+                            update_clicked = st.form_submit_button("🔄 Update Existing", use_container_width=True)
+                        else:
+                            update_clicked = False
+                    
+                    with col_save2:
+                        save_new_clicked = st.form_submit_button("💾 Save As New", use_container_width=True)
+                    
+                    # Handle form submission
+                    if update_clicked or save_new_clicked:
+                        # Validate inputs
+                        if not comparison_name:
+                            st.error("Please enter a comparison name")
+                        elif protect_with_password and (not save_password or not save_password_confirm):
+                            st.error("Please enter and confirm the password")
+                        elif protect_with_password and save_password != save_password_confirm:
+                            st.error("Passwords do not match")
+                        else:
+                            current_battery_type = st.session_state.get('battery_type', 'General')
+                            current_extended_meta = st.session_state.get('build_metadata_extended', {})
+                            
+                            # Collect current standard params (from loaded or current state)
+                            current_standard_params = {
+                                'min_activation_voltage': min_activation_voltage,
+                                'std_max_oc_voltage': std_max_oc_voltage,
+                                'std_activation_time_ms': std_activation_time_ms if use_standards else None,
+                                'std_duration_sec': std_duration_sec if use_standards else None
+                            }
+                            
+                            if update_clicked:
+                                # Update existing comparison
+                                comparison_id = st.session_state.get('editing_comparison_id')
+                                success, msg = update_comparison_in_db(
+                                    comparison_id,
+                                    comparison_name,
+                                    dataframes,
+                                    build_names,
+                                    metrics_df,
+                                    battery_type=current_battery_type,
+                                    extended_metadata=current_extended_meta,
+                                    existing_password=existing_password_for_update,
+                                    new_password=save_password if protect_with_password else None,
+                                    standard_params=current_standard_params
+                                )
                             else:
-                                update_clicked = False
-                        
-                        with col_save2:
-                            save_new_clicked = st.form_submit_button("💾 Save As New", use_container_width=True)
-                        
-                        # Handle form submission
-                        if update_clicked or save_new_clicked:
-                            # Validate inputs
-                            if not comparison_name:
-                                st.error("Please enter a comparison name")
-                            elif protect_with_password and (not save_password or not save_password_confirm):
-                                st.error("Please enter and confirm the password")
-                            elif protect_with_password and save_password != save_password_confirm:
-                                st.error("Passwords do not match")
+                                # Save as new comparison
+                                success, msg = save_comparison_to_db(
+                                    comparison_name,
+                                    dataframes,
+                                    build_names,
+                                    metrics_df,
+                                    battery_type=current_battery_type,
+                                    extended_metadata=current_extended_meta,
+                                    password=save_password if protect_with_password else None,
+                                    standard_params=current_standard_params
+                                )
+                            
+                            if success:
+                                st.success(msg)
+                                # Clear editing context after successful save
+                                if 'editing_comparison_id' in st.session_state:
+                                    del st.session_state['editing_comparison_id']
+                                if 'editing_comparison_name' in st.session_state:
+                                    del st.session_state['editing_comparison_name']
+                                if 'editing_comparison_protected' in st.session_state:
+                                    del st.session_state['editing_comparison_protected']
                             else:
-                                current_battery_type = st.session_state.get('battery_type', 'General')
-                                current_extended_meta = st.session_state.get('build_metadata_extended', {})
-                                
-                                # Collect current standard params (from loaded or current state)
-                                current_standard_params = {
-                                    'min_activation_voltage': min_activation_voltage,
-                                    'std_max_oc_voltage': std_max_oc_voltage,
-                                    'std_activation_time_ms': std_activation_time_ms if use_standards else None,
-                                    'std_duration_sec': std_duration_sec if use_standards else None
-                                }
-                                
-                                if update_clicked:
-                                    # Update existing comparison
-                                    comparison_id = st.session_state.get('editing_comparison_id')
-                                    success, msg = update_comparison_in_db(
-                                        comparison_id,
-                                        comparison_name,
-                                        dataframes,
-                                        build_names,
-                                        metrics_df,
-                                        battery_type=current_battery_type,
-                                        extended_metadata=current_extended_meta,
-                                        existing_password=existing_password_for_update,
-                                        new_password=save_password if protect_with_password else None,
-                                        standard_params=current_standard_params
-                                    )
-                                else:
-                                    # Save as new comparison
-                                    success, msg = save_comparison_to_db(
-                                        comparison_name,
-                                        dataframes,
-                                        build_names,
-                                        metrics_df,
-                                        battery_type=current_battery_type,
-                                        extended_metadata=current_extended_meta,
-                                        password=save_password if protect_with_password else None,
-                                        standard_params=current_standard_params
-                                    )
-                                
-                                if success:
-                                    st.success(msg)
-                                    # Clear editing context after successful save
-                                    if 'editing_comparison_id' in st.session_state:
-                                        del st.session_state['editing_comparison_id']
-                                    if 'editing_comparison_name' in st.session_state:
-                                        del st.session_state['editing_comparison_name']
-                                    if 'editing_comparison_protected' in st.session_state:
-                                        del st.session_state['editing_comparison_protected']
-                                else:
-                                    st.error(msg)
+                                st.error(msg)
             
             # Format metrics dataframe, handling None/NaN values gracefully
             def format_value(val):
