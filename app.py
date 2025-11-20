@@ -2187,9 +2187,6 @@ if data_mode == "Upload Files":
                 key=f"file_{i}"
             )
             
-            # Get extracted metadata for this build (if file was uploaded earlier in this session)
-            extracted_for_build = st.session_state.get('build_metadata_extended', {}).get(i, {})
-            
             with st.sidebar.expander("⚙️ Extended Build Metadata (Optional)", expanded=False):
                 st.markdown("**Weight Inputs (per cell)**")
                 col1, col2 = st.columns(2)
@@ -2198,7 +2195,6 @@ if data_mode == "Upload Files":
                         "Anode weight (g):", 
                         min_value=0.0, 
                         max_value=1000.0, 
-                        value=float(extracted_for_build.get('anode_weight_per_cell', 0.0)), 
                         step=0.01,
                         key=f"anode_weight_{i}",
                         help="Weight of anode material per cell in grams"
@@ -2207,7 +2203,6 @@ if data_mode == "Upload Files":
                         "Cathode weight (g):", 
                         min_value=0.0, 
                         max_value=1000.0, 
-                        value=float(extracted_for_build.get('cathode_weight_per_cell', 0.0)), 
                         step=0.01,
                         key=f"cathode_weight_{i}",
                         help="Weight of cathode material per cell in grams"
@@ -2217,7 +2212,6 @@ if data_mode == "Upload Files":
                         "Heat pellet (g):", 
                         min_value=0.0, 
                         max_value=1000.0, 
-                        value=float(extracted_for_build.get('heat_pellet_weight', 0.0)), 
                         step=0.01,
                         key=f"heat_pellet_{i}",
                         help="Weight of heat pellet in grams"
@@ -2226,7 +2220,6 @@ if data_mode == "Upload Files":
                         "Electrolyte (g):", 
                         min_value=0.0, 
                         max_value=1000.0, 
-                        value=float(extracted_for_build.get('electrolyte_weight', 0.0)), 
                         step=0.01,
                         key=f"electrolyte_{i}",
                         help="Weight of electrolyte in grams"
@@ -2239,7 +2232,6 @@ if data_mode == "Upload Files":
                         "Cells in series:", 
                         min_value=1, 
                         max_value=100, 
-                        value=int(extracted_for_build.get('cells_in_series', 1)), 
                         step=1,
                         key=f"cells_series_{i}",
                         help="Number of cells connected in series"
@@ -2249,7 +2241,6 @@ if data_mode == "Upload Files":
                         "Stacks in parallel:", 
                         min_value=1, 
                         max_value=100, 
-                        value=int(extracted_for_build.get('stacks_in_parallel', 1)), 
                         step=1,
                         key=f"stacks_parallel_{i}",
                         help="Number of stacks connected in parallel"
@@ -2260,7 +2251,6 @@ if data_mode == "Upload Files":
                     "Calorific value (cal/g):", 
                     min_value=0.0, 
                     max_value=10000.0, 
-                    value=float(extracted_for_build.get('calorific_value_per_gram', 0.0)), 
                     step=1.0,
                     key=f"calorific_value_{i}",
                     help="Calorific value per gram in calories/g (will be converted to kJ)"
@@ -2350,11 +2340,17 @@ if data_mode == "Upload Files":
                             'total_calorific_value': total_calorific
                         }
                         
-                        # Trigger rerun to populate form fields with extracted metadata
+                        # Seed session_state keys to auto-populate form fields (no rerun needed)
                         if f'metadata_extracted_{i}' not in st.session_state:
                             st.session_state[f'metadata_extracted_{i}'] = True
+                            st.session_state[f'anode_weight_{i}'] = float(anode_per_cell)
+                            st.session_state[f'cathode_weight_{i}'] = float(cathode_per_cell)
+                            st.session_state[f'heat_pellet_{i}'] = float(heat_pellet)
+                            st.session_state[f'electrolyte_{i}'] = float(electrolyte)
+                            st.session_state[f'cells_series_{i}'] = int(cells_in_series)
+                            st.session_state[f'stacks_parallel_{i}'] = int(stacks_in_parallel)
+                            st.session_state[f'calorific_value_{i}'] = float(calorific)
                             st.info(f"✅ Metadata extracted from Excel file for Build {i+1}")
-                            st.rerun()
                     
                     # Ensure unique build names to prevent duplicate indices in metrics_df
                     unique_name = build_name
