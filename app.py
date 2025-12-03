@@ -1289,41 +1289,58 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             story.append(adv_table)
             story.append(Spacer(1, 0.2*inch))
     
-    # Discharge Curve Analysis Section
+    # Discharge Curve Analysis Section - Combined table for all builds
     if analytics_list and any(analytics for analytics in analytics_list):
         story.append(PageBreak())
         story.append(Paragraph("Discharge Curve Analysis", heading_style))
         story.append(Spacer(1, 0.1*inch))
         
-        for idx, (build_name, analytics) in enumerate(zip(build_names, analytics_list)):
-            if analytics:
-                story.append(Paragraph(f"<b>{build_name}</b>", styles['Normal']))
-                story.append(Spacer(1, 0.05*inch))
-                
-                curve_data = []
-                if analytics.get('ΔV/ΔT Mean (V/s)') is not None:
-                    curve_data.append(['Mean ΔV/ΔT', f"{analytics['ΔV/ΔT Mean (V/s)']:.6f} V/s"])
-                if analytics.get('ΔV/ΔT Std Dev (V/s)') is not None:
-                    curve_data.append(['Std Dev ΔV/ΔT', f"{analytics['ΔV/ΔT Std Dev (V/s)']:.6f} V/s"])
-                if analytics.get('ΔV/ΔT Max (V/s)') is not None:
-                    curve_data.append(['Max |ΔV/ΔT|', f"{analytics['ΔV/ΔT Max (V/s)']:.6f} V/s"])
-                if analytics.get('Discharge Slope Variability (%)') is not None:
-                    curve_data.append(['Slope Variability', f"{analytics['Discharge Slope Variability (%)']:.2f} %"])
-                if analytics.get('Curve Stability Assessment'):
-                    curve_data.append(['Stability Assessment', str(analytics['Curve Stability Assessment'])])
-                
-                if curve_data:
-                    curve_table = Table(curve_data, colWidths=[2.5*inch, 3.5*inch])
-                    curve_table.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (0, -1), rl_colors.lightgrey),
-                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                        ('FONTSIZE', (0, 0), (-1, -1), 9),
-                        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
-                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ]))
-                    story.append(curve_table)
-                    story.append(Spacer(1, 0.15*inch))
+        header_row = [Paragraph('Metric', table_header_style)]
+        for build_name in build_names:
+            header_row.append(Paragraph(str(build_name), table_header_style))
+        
+        curve_data = [header_row]
+        
+        curve_metrics = [
+            ('ΔV/ΔT Mean (V/s)', 'Mean ΔV/ΔT (V/s)', lambda v: f"{v:.6f}"),
+            ('ΔV/ΔT Std Dev (V/s)', 'Std Dev ΔV/ΔT (V/s)', lambda v: f"{v:.6f}"),
+            ('ΔV/ΔT Max (V/s)', 'Max |ΔV/ΔT| (V/s)', lambda v: f"{v:.6f}"),
+            ('Discharge Slope Variability (%)', 'Slope Variability (%)', lambda v: f"{v:.2f}"),
+            ('Curve Stability Assessment', 'Stability', lambda v: str(v)),
+        ]
+        
+        for key, label, formatter in curve_metrics:
+            has_any_value = any(
+                analytics and analytics.get(key) is not None 
+                for analytics in analytics_list
+            )
+            if has_any_value:
+                row = [label]
+                for analytics in analytics_list:
+                    val = analytics.get(key) if analytics else None
+                    row.append(formatter(val) if val is not None else "-")
+                curve_data.append(row)
+        
+        if len(curve_data) > 1:
+            num_builds = len(build_names)
+            col_widths = [2*inch] + [1.2*inch] * num_builds
+            if sum(col_widths) > 7*inch:
+                col_widths = [1.5*inch] + [0.9*inch] * num_builds
+            
+            curve_table = Table(curve_data, colWidths=col_widths)
+            curve_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#17becf')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#e6f7ff')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            story.append(curve_table)
+            story.append(Spacer(1, 0.2*inch))
     
     # Correlation Analysis Section
     if correlations and len(correlations) > 0:
