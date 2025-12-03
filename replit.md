@@ -103,3 +103,27 @@ Preferred communication style: Simple, everyday language.
 - Forms appear in correct location (under respective builds, not at end)
 - Zero session_state errors
 - No duplicate forms at end of sidebar
+
+### Multi-Build Excel File Support (December 2025) ✅
+**Core Feature**: Upload a single Excel file containing multiple builds arranged horizontally.
+
+**Excel Format**:
+- Builds are arranged side-by-side (horizontally) with empty columns as separators
+- Each build has metadata in rows 1-10 (Battery Code, Temperature, Build Number, weights, etc.)
+- Data columns (Time, Discharge Current, Voltage) start at row 11
+- Build sections are detected by looking for "Build Number" labels
+
+**Implementation**:
+- `load_multi_build_file()` function parses horizontal build layout
+- Checkbox toggle "Single file for all builds" switches between upload modes
+- When enabled: single file uploader that auto-detects all builds
+- When disabled: individual file uploaders per build (original behavior)
+- Metadata extracted for each build from its section
+- Immediate UI update via st.rerun() after file processing
+
+**Sample File Structure** (attached_assets/complete_dataset_1764747758470.xlsx):
+- Build 1: Anode 0.70g, Cathode 1.75g, 18 cells, 4 stacks, Battery Code 48
+- Build 2: Anode 0.65g, Cathode 1.70g
+- Build 3: Anode 0.65g, Cathode 1.70g
+
+**Verification**: End-to-end tests confirm 3 builds detected, metadata extracted correctly, discharge curves visualized.

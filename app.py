@@ -2409,6 +2409,14 @@ if data_mode == "Upload Files":
             help="Upload one Excel file containing all builds arranged horizontally. Each build should have a 'Build Number' label in the metadata."
         )
         
+        # Clear stale multi-build state when switching to individual file mode
+        if not use_multi_build_file and 'multi_build_results' in st.session_state:
+            del st.session_state['multi_build_results']
+            if 'multi_build_processed' in st.session_state:
+                del st.session_state['multi_build_processed']
+            if 'multi_build_file_id' in st.session_state:
+                del st.session_state['multi_build_file_id']
+        
         if use_multi_build_file:
             # Multi-build file upload mode
             st.sidebar.markdown("### Upload Multi-Build File")
@@ -2420,13 +2428,21 @@ if data_mode == "Upload Files":
                 key="multi_build_file"
             )
             
-            if multi_build_file and 'multi_build_processed' not in st.session_state:
+            # Detect file change by comparing file IDs
+            current_file_id = multi_build_file.file_id if multi_build_file else None
+            previous_file_id = st.session_state.get('multi_build_file_id')
+            file_changed = current_file_id is not None and current_file_id != previous_file_id
+            
+            # Process file if new or changed
+            if multi_build_file and (file_changed or 'multi_build_processed' not in st.session_state):
                 # Process the multi-build file
                 build_results = load_multi_build_file(multi_build_file)
                 
                 if build_results:
                     st.session_state['multi_build_processed'] = True
                     st.session_state['multi_build_results'] = build_results
+                    st.session_state['multi_build_file_id'] = current_file_id
+                    st.session_state['multi_build_success'] = len(build_results)
                     
                     # Update num_builds based on detected builds
                     num_builds = len(build_results)
@@ -2443,7 +2459,12 @@ if data_mode == "Upload Files":
                             st.session_state[f'stacks_parallel_{i}'] = int(ext_meta.get('stacks_in_parallel', 1) or 1)
                             st.session_state[f'calorific_value_{i}'] = float(ext_meta.get('calorific_value_per_gram', 0) or 0)
                     
-                    st.sidebar.success(f"✅ Detected {num_builds} builds in file!")
+                    # Rerun to update UI immediately after processing
+                    st.rerun()
+            
+            # Show success message after rerun
+            if 'multi_build_success' in st.session_state:
+                st.sidebar.success(f"✅ Detected {st.session_state['multi_build_success']} builds in file!")
             
             # Display detected builds and their metadata forms
             if 'multi_build_results' in st.session_state:
@@ -2564,6 +2585,10 @@ if data_mode == "Upload Files":
                         del st.session_state['multi_build_processed']
                     if 'multi_build_results' in st.session_state:
                         del st.session_state['multi_build_results']
+                    if 'multi_build_file_id' in st.session_state:
+                        del st.session_state['multi_build_file_id']
+                    if 'multi_build_success' in st.session_state:
+                        del st.session_state['multi_build_success']
                     st.rerun()
         else:
             # Individual file upload mode (original behavior)
