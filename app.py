@@ -1187,53 +1187,64 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         story.append(comp_table)
         story.append(Spacer(1, 0.2*inch))
     
-    # Extended Build Metadata Section
+    # Extended Build Metadata Section - Combined table for all builds
     if extended_metadata_list and any(meta for meta in extended_metadata_list):
         story.append(PageBreak())
         story.append(Paragraph("Extended Build Metadata", heading_style))
         story.append(Spacer(1, 0.1*inch))
         
-        for idx, (build_name, ext_meta) in enumerate(zip(build_names, extended_metadata_list)):
-            if ext_meta and any(ext_meta.values()):
-                story.append(Paragraph(f"<b>{build_name}</b>", styles['Normal']))
-                story.append(Spacer(1, 0.05*inch))
-                
-                ext_data = []
-                if ext_meta.get('anode_weight_per_cell'):
-                    ext_data.append(['Anode Weight per Cell', f"{ext_meta['anode_weight_per_cell']:.2f} g"])
-                if ext_meta.get('cathode_weight_per_cell'):
-                    ext_data.append(['Cathode Weight per Cell', f"{ext_meta['cathode_weight_per_cell']:.2f} g"])
-                if ext_meta.get('heat_pellet_weight_per_cell'):
-                    ext_data.append(['Heat Pellet Weight per Cell', f"{ext_meta['heat_pellet_weight_per_cell']:.2f} g"])
-                if ext_meta.get('electrolyte_weight_per_cell'):
-                    ext_data.append(['Electrolyte Weight per Cell', f"{ext_meta['electrolyte_weight_per_cell']:.2f} g"])
-                if ext_meta.get('cells_in_series'):
-                    ext_data.append(['Cells in Series', f"{ext_meta['cells_in_series']}"])
-                if ext_meta.get('stacks_in_parallel'):
-                    ext_data.append(['Stacks in Parallel', f"{ext_meta['stacks_in_parallel']}"])
-                if ext_meta.get('total_anode_weight'):
-                    ext_data.append(['Total Anode Weight', f"{ext_meta['total_anode_weight']:.2f} g"])
-                if ext_meta.get('total_cathode_weight'):
-                    ext_data.append(['Total Cathode Weight', f"{ext_meta['total_cathode_weight']:.2f} g"])
-                if ext_meta.get('total_stack_weight'):
-                    ext_data.append(['Total Stack Weight', f"{ext_meta['total_stack_weight']:.2f} g"])
-                if ext_meta.get('calorific_value_per_gram'):
-                    ext_data.append(['Calorific Value per gram', f"{ext_meta['calorific_value_per_gram']:.0f} cal/g"])
-                if ext_meta.get('total_calorific_value'):
-                    ext_data.append(['Total Calorific Value', f"{ext_meta['total_calorific_value']:.2f} kJ"])
-                
-                if ext_data:
-                    ext_table = Table(ext_data, colWidths=[3*inch, 2*inch])
-                    ext_table.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (0, -1), rl_colors.lightgrey),
-                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                        ('FONTSIZE', (0, 0), (-1, -1), 9),
-                        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
-                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ]))
-                    story.append(ext_table)
-                    story.append(Spacer(1, 0.15*inch))
+        header_row = [Paragraph('Metric', table_header_style)]
+        for build_name in build_names:
+            header_row.append(Paragraph(str(build_name), table_header_style))
+        
+        ext_data = [header_row]
+        
+        metric_keys = [
+            ('anode_weight_per_cell', 'Anode Weight (g)', lambda v: f"{v:.2f}"),
+            ('cathode_weight_per_cell', 'Cathode Weight (g)', lambda v: f"{v:.2f}"),
+            ('heat_pellet_weight', 'Heat Pellet (g)', lambda v: f"{v:.2f}"),
+            ('electrolyte_weight', 'Electrolyte (g)', lambda v: f"{v:.2f}"),
+            ('cells_in_series', 'Cells in Series', lambda v: f"{int(v)}"),
+            ('stacks_in_parallel', 'Stacks in Parallel', lambda v: f"{int(v)}"),
+            ('calorific_value_per_gram', 'Calorific Value (cal/g)', lambda v: f"{v:.0f}"),
+            ('total_anode_weight', 'Total Anode (g)', lambda v: f"{v:.2f}"),
+            ('total_cathode_weight', 'Total Cathode (g)', lambda v: f"{v:.2f}"),
+            ('total_stack_weight', 'Total Stack (g)', lambda v: f"{v:.2f}"),
+            ('total_calorific_value', 'Total Calorific (kJ)', lambda v: f"{v:.2f}"),
+        ]
+        
+        for key, label, formatter in metric_keys:
+            has_any_value = any(
+                ext_meta and ext_meta.get(key) 
+                for ext_meta in extended_metadata_list
+            )
+            if has_any_value:
+                row = [label]
+                for ext_meta in extended_metadata_list:
+                    val = ext_meta.get(key) if ext_meta else None
+                    row.append(formatter(val) if val else "-")
+                ext_data.append(row)
+        
+        if len(ext_data) > 1:
+            num_builds = len(build_names)
+            col_widths = [2*inch] + [1.2*inch] * num_builds
+            if sum(col_widths) > 7*inch:
+                col_widths = [1.5*inch] + [0.9*inch] * num_builds
+            
+            ext_table = Table(ext_data, colWidths=col_widths)
+            ext_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#2ca02c')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#e6ffe6')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            story.append(ext_table)
+            story.append(Spacer(1, 0.2*inch))
     
     # Advanced Performance Metrics Section
     if metrics_df is not None and not metrics_df.empty:
