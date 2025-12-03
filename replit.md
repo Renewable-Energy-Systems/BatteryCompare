@@ -127,3 +127,19 @@ Preferred communication style: Simple, everyday language.
 - Build 3: Anode 0.65g, Cathode 1.70g
 
 **Verification**: End-to-end tests confirm 3 builds detected, metadata extracted correctly, discharge curves visualized.
+
+### PDF Report Combined Tables (December 2025) ✅
+**Core Feature**: Reformatted PDF report sections to use single combined tables instead of separate per-build tables.
+
+**Changes**:
+- **Performance Comparison vs Standards**: Single table with columns: Metric, Standard, Build 1, Build 2, ... (removed "Difference" column)
+- **Extended Build Metadata**: Single table with columns: Metric, Build 1, Build 2, ... showing weights, cells, stacks, calorific values
+- **Discharge Curve Analysis**: Single table with columns: Metric, Build 1, Build 2, ... showing ΔV/ΔT stats and stability
+
+**Implementation**:
+- Dynamic column width calculation adjusts for number of builds (narrower columns for more builds)
+- Color-coded headers: grey for standards comparison, green for metadata, cyan for curve analysis
+- Consistent styling with metric names left-aligned, values center-aligned
+- Metrics only appear in table if at least one build has data for that metric
+
+**Verification**: End-to-end tests confirm PDF export works correctly with 3-build analysis.
