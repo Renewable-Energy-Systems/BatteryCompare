@@ -143,3 +143,22 @@ Preferred communication style: Simple, everyday language.
 - Metrics only appear in table if at least one build has data for that metric
 
 **Verification**: End-to-end tests confirm PDF export works correctly with 3-build analysis.
+
+### PDF Table Text Wrapping (December 2025) ✅
+**Core Feature**: All PDF report table cells support automatic text wrapping with auto-adjusting row heights.
+
+**Implementation**:
+- Added `table_cell_style` (centered) and `table_cell_left_style` (left-aligned) ParagraphStyles with:
+  - fontSize=8, wordWrap='CJK', leading=10 for proper line spacing
+- All table cells wrapped in Paragraph() objects for automatic text wrapping
+- TOPPADDING and BOTTOMPADDING (6pt) added to all tables for row height expansion
+- VALIGN='MIDDLE' ensures vertical centering of wrapped text
+
+**Tables Updated**:
+- Report Info, Build Information, Performance Metrics
+- Standard Benchmarks, Performance Comparison vs Standards
+- Extended Build Metadata, Advanced Performance Metrics
+- Discharge Curve Analysis (including Stability row with long text)
+- Correlation Analysis, Duration Correlations
+
+**Verification**: End-to-end tests confirm PDF export works with no text overlap.

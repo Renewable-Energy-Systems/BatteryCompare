@@ -1015,6 +1015,25 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         alignment=TA_CENTER,
         wordWrap='CJK'
     )
+    # Cell style for table content with word wrapping
+    table_cell_style = ParagraphStyle(
+        'TableCell',
+        parent=styles['Normal'],
+        fontSize=8,
+        fontName='Helvetica',
+        alignment=TA_CENTER,
+        wordWrap='CJK',
+        leading=10
+    )
+    table_cell_left_style = ParagraphStyle(
+        'TableCellLeft',
+        parent=styles['Normal'],
+        fontSize=8,
+        fontName='Helvetica',
+        alignment=TA_LEFT,
+        wordWrap='CJK',
+        leading=10
+    )
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -1023,19 +1042,18 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
     story.append(Spacer(1, 0.2*inch))
     
     info_data = [
-        ['Generated:', timestamp],
-        ['Number of Builds:', str(len(build_names))],
-        ['Min. Voltage for Activation:', f"{min_activation_voltage} V"]
+        [Paragraph('Generated:', table_cell_left_style), Paragraph(timestamp, table_cell_style)],
+        [Paragraph('Number of Builds:', table_cell_left_style), Paragraph(str(len(build_names)), table_cell_style)],
+        [Paragraph('Min. Voltage for Activation:', table_cell_left_style), Paragraph(f"{min_activation_voltage} V", table_cell_style)]
     ]
     info_table = Table(info_data, colWidths=[2*inch, 4*inch])
     info_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (0, -1), rl_colors.lightgrey),
         ('TEXTCOLOR', (0, 0), (-1, -1), rl_colors.black),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
         ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
     ]))
     story.append(info_table)
     story.append(Spacer(1, 0.2*inch))
@@ -1045,22 +1063,21 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                    Paragraph('Temperature', table_header_style), Paragraph('Build ID', table_header_style)]]
     for i, (name, metadata) in enumerate(zip(build_names, metadata_list if metadata_list else [{}]*len(build_names))):
         build_data.append([
-            name,
-            metadata.get('battery_code', 'N/A') if metadata else 'N/A',
-            metadata.get('temperature', 'N/A') if metadata else 'N/A',
-            metadata.get('build_id', 'N/A') if metadata else 'N/A'
+            Paragraph(str(name), table_cell_left_style),
+            Paragraph(str(metadata.get('battery_code', 'N/A') if metadata else 'N/A'), table_cell_style),
+            Paragraph(str(metadata.get('temperature', 'N/A') if metadata else 'N/A'), table_cell_style),
+            Paragraph(str(metadata.get('build_id', 'N/A') if metadata else 'N/A'), table_cell_style)
         ])
     
     build_table = Table(build_data, colWidths=[2*inch, 1.5*inch, 1.2*inch, 1.3*inch])
     build_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#2ca02c')),
         ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), rl_colors.beige),
         ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+        ('BACKGROUND', (0, 1), (-1, -1), rl_colors.beige),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
     ]))
     story.append(build_table)
     story.append(Spacer(1, 0.3*inch))
@@ -1079,14 +1096,14 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         metrics_data = [header_row]
         
         for build_name in metrics_df.index:
-            row = [build_name]
+            row = [Paragraph(str(build_name), table_cell_left_style)]
             for metric in key_metrics:
                 if metric in metrics_df.columns:
                     value = metrics_df.loc[build_name, metric]
                     if pd.notna(value):
-                        row.append(f"{value:.3f}")
+                        row.append(Paragraph(f"{value:.3f}", table_cell_style))
                     else:
-                        row.append("N/A")
+                        row.append(Paragraph("N/A", table_cell_style))
             metrics_data.append(row)
         
         col_widths = [2*inch] + [1.5*inch] * (len(metrics_data[0]) - 1)
@@ -1094,12 +1111,11 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         metrics_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1f77b4')),
             ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightblue),
             ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightblue),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
         story.append(metrics_table)
         story.append(Spacer(1, 0.3*inch))
@@ -1108,27 +1124,26 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         story.append(PageBreak())
         story.append(Paragraph("Standard Performance Benchmarks", heading_style))
         
-        std_data = [['Metric', 'Standard Value']]
+        std_data = [[Paragraph('Metric', table_header_style), Paragraph('Standard Value', table_header_style)]]
         if std_max_onload_voltage:
-            std_data.append(['Max On-Load Voltage', f"{std_max_onload_voltage} V"])
+            std_data.append([Paragraph('Max On-Load Voltage', table_cell_left_style), Paragraph(f"{std_max_onload_voltage} V", table_cell_style)])
         if std_max_oc_voltage:
-            std_data.append(['Max Open Circuit Voltage', f"{std_max_oc_voltage} V"])
+            std_data.append([Paragraph('Max Open Circuit Voltage', table_cell_left_style), Paragraph(f"{std_max_oc_voltage} V", table_cell_style)])
         if std_activation_time_ms:
             std_activation_sec = std_activation_time_ms / 1000.0
-            std_data.append(['Max Activation Time', f"{std_activation_time_ms} ms ({std_activation_sec:.2f} s)"])
+            std_data.append([Paragraph('Max Activation Time', table_cell_left_style), Paragraph(f"{std_activation_time_ms} ms ({std_activation_sec:.2f} s)", table_cell_style)])
         if std_duration_sec:
-            std_data.append(['Target Min Duration', f"{std_duration_sec} s"])
+            std_data.append([Paragraph('Target Min Duration', table_cell_left_style), Paragraph(f"{std_duration_sec} s", table_cell_style)])
         
         std_table = Table(std_data, colWidths=[3*inch, 3*inch])
         std_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#ff7f0e')),
             ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightyellow),
             ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightyellow),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
         story.append(std_table)
         story.append(Spacer(1, 0.2*inch))
@@ -1144,26 +1159,26 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         comp_data = [header_row]
         
         if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
-            row = ['Max OC V', f"{std_max_oc_voltage} V"]
+            row = [Paragraph('Max OC V', table_cell_left_style), Paragraph(f"{std_max_oc_voltage} V", table_cell_style)]
             for build_name in build_list:
                 actual = safe_scalar(metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)'])
-                row.append(f"{actual:.3f} V" if pd.notna(actual) else "N/A")
+                row.append(Paragraph(f"{actual:.3f} V" if pd.notna(actual) else "N/A", table_cell_style))
             comp_data.append(row)
         
         if std_activation_time and 'Activation Time (Sec)' in metrics_df.columns:
             std_val = f"{std_activation_time_ms} ms" if std_activation_time_ms else f"{std_activation_time} min"
-            row = ['Activation Time', std_val]
+            row = [Paragraph('Activation Time', table_cell_left_style), Paragraph(std_val, table_cell_style)]
             for build_name in build_list:
                 actual = safe_scalar(metrics_df.loc[build_name, 'Activation Time (Sec)'])
-                row.append(f"{actual:.3f} sec" if pd.notna(actual) else "N/A")
+                row.append(Paragraph(f"{actual:.3f} sec" if pd.notna(actual) else "N/A", table_cell_style))
             comp_data.append(row)
         
         if std_duration and 'Duration (Sec)' in metrics_df.columns:
             std_val = f"{std_duration_sec} sec" if std_duration_sec else f"{std_duration} min"
-            row = ['Duration', std_val]
+            row = [Paragraph('Duration', table_cell_left_style), Paragraph(std_val, table_cell_style)]
             for build_name in build_list:
                 actual = safe_scalar(metrics_df.loc[build_name, 'Duration (Sec)'])
-                row.append(f"{actual:.3f} sec" if pd.notna(actual) else "N/A")
+                row.append(Paragraph(f"{actual:.3f} sec" if pd.notna(actual) else "N/A", table_cell_style))
             comp_data.append(row)
         
         num_builds = len(build_list)
@@ -1175,13 +1190,11 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         comp_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), rl_colors.grey),
             ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
             ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
             ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightgrey),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
         
         story.append(comp_table)
@@ -1219,10 +1232,10 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                 for ext_meta in extended_metadata_list
             )
             if has_any_value:
-                row = [label]
+                row = [Paragraph(label, table_cell_left_style)]
                 for ext_meta in extended_metadata_list:
                     val = ext_meta.get(key) if ext_meta else None
-                    row.append(formatter(val) if val else "-")
+                    row.append(Paragraph(formatter(val) if val else "-", table_cell_style))
                 ext_data.append(row)
         
         if len(ext_data) > 1:
@@ -1235,13 +1248,11 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             ext_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#2ca02c')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('ALIGN', (0, 1), (0, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
                 ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
                 ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#e6ffe6')),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
             story.append(ext_table)
             story.append(Spacer(1, 0.2*inch))
@@ -1264,14 +1275,14 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             adv_data = [header_row]
             
             for build_name in metrics_df.index:
-                row = [build_name]
+                row = [Paragraph(str(build_name), table_cell_left_style)]
                 for metric in advanced_metrics:
                     if metric in metrics_df.columns:
                         value = metrics_df.loc[build_name, metric]
                         if pd.notna(value):
-                            row.append(f"{value:.4f}")
+                            row.append(Paragraph(f"{value:.4f}", table_cell_style))
                         else:
-                            row.append("N/A")
+                            row.append(Paragraph("N/A", table_cell_style))
                 adv_data.append(row)
             
             col_widths = [1.5*inch] + [1.3*inch] * (len(adv_data[0]) - 1)
@@ -1279,12 +1290,11 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             adv_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#9467bd')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lavender),
                 ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lavender),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
             story.append(adv_table)
             story.append(Spacer(1, 0.2*inch))
@@ -1315,10 +1325,10 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                 for analytics in analytics_list
             )
             if has_any_value:
-                row = [label]
+                row = [Paragraph(label, table_cell_left_style)]
                 for analytics in analytics_list:
                     val = analytics.get(key) if analytics else None
-                    row.append(formatter(val) if val is not None else "-")
+                    row.append(Paragraph(formatter(val) if val is not None else "-", table_cell_style))
                 curve_data.append(row)
         
         if len(curve_data) > 1:
@@ -1331,13 +1341,11 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             curve_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#17becf')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('ALIGN', (0, 1), (0, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
                 ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
                 ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#e6f7ff')),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
             story.append(curve_table)
             story.append(Spacer(1, 0.2*inch))
@@ -1354,23 +1362,22 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         
         for corr_name, corr_info in correlations.items():
             corr_data.append([
-                corr_name,
-                f"{corr_info['correlation']:.3f}",
-                f"{corr_info['p_value']:.4f}",
-                f"{corr_info['strength']} ({corr_info['direction']})",
-                corr_info['significance']
+                Paragraph(str(corr_name), table_cell_left_style),
+                Paragraph(f"{corr_info['correlation']:.3f}", table_cell_style),
+                Paragraph(f"{corr_info['p_value']:.4f}", table_cell_style),
+                Paragraph(f"{corr_info['strength']} ({corr_info['direction']})", table_cell_style),
+                Paragraph(corr_info['significance'], table_cell_style)
             ])
         
         corr_table = Table(corr_data, colWidths=[2*inch, 0.9*inch, 0.9*inch, 1.2*inch, 1.2*inch])
         corr_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#d62728')),
             ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightpink),
             ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightpink),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
         story.append(corr_table)
         story.append(Spacer(1, 0.2*inch))
@@ -1404,23 +1411,22 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                                   Paragraph('Total Calorific (kJ)', table_header_style)]]
             for idx, row_dict in enumerate(duration_correlations['values_table']):
                 values_table_data.append([
-                    f"Build {idx+1}",
-                    f"{row_dict.get('Duration (s)', 'N/A')}",
-                    f"{row_dict.get('Total Anode Weight (g)', 'N/A')}",
-                    f"{row_dict.get('Total Cathode Weight (g)', 'N/A')}",
-                    f"{row_dict.get('Total Calorific Value (kJ)', 'N/A')}"
+                    Paragraph(f"Build {idx+1}", table_cell_left_style),
+                    Paragraph(f"{row_dict.get('Duration (s)', 'N/A')}", table_cell_style),
+                    Paragraph(f"{row_dict.get('Total Anode Weight (g)', 'N/A')}", table_cell_style),
+                    Paragraph(f"{row_dict.get('Total Cathode Weight (g)', 'N/A')}", table_cell_style),
+                    Paragraph(f"{row_dict.get('Total Calorific Value (kJ)', 'N/A')}", table_cell_style)
                 ])
             
             values_table = Table(values_table_data, colWidths=[1*inch, 1.2*inch, 1.3*inch, 1.3*inch, 1.4*inch])
             values_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#2ca02c')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightgreen),
                 ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightgreen),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
             story.append(values_table)
             story.append(Spacer(1, 0.2*inch))
@@ -1433,11 +1439,11 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         for corr_name, corr_info in duration_correlations.items():
             if corr_name != 'values_table':
                 dur_corr_data.append([
-                    corr_name,
-                    f"{corr_info['correlation']:.3f}",
-                    f"{corr_info['p_value']:.4f}",
-                    f"{corr_info['strength']} ({corr_info['direction']})",
-                    corr_info['significance']
+                    Paragraph(str(corr_name), table_cell_left_style),
+                    Paragraph(f"{corr_info['correlation']:.3f}", table_cell_style),
+                    Paragraph(f"{corr_info['p_value']:.4f}", table_cell_style),
+                    Paragraph(f"{corr_info['strength']} ({corr_info['direction']})", table_cell_style),
+                    Paragraph(corr_info['significance'], table_cell_style)
                 ])
         
         if len(dur_corr_data) > 1:
@@ -1445,12 +1451,11 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             dur_corr_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#ff7f0e')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#ffe4cc')),
                 ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#ffe4cc')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
             story.append(dur_corr_table)
             story.append(Spacer(1, 0.2*inch))
