@@ -249,6 +249,192 @@ def load_data(uploaded_file):
         st.error(f"Error loading file: {str(e)}")
         return None, None, None, None
 
+def load_multi_build_file(uploaded_file):
+    """
+    Load a single Excel file containing multiple builds arranged horizontally.
+    
+    Expected format:
+    - Builds are arranged side by side (horizontally) with empty columns as separators
+    - Each build has metadata in rows 1-10 (Battery Code, Temperature, Build Number, weights, etc.)
+    - Data columns (Time, Discharge Current, Voltage) start at row 11
+    - Build Number row identifies each build section
+    
+    Returns:
+    - List of tuples: [(df, metadata, standard_params, extended_metadata), ...]
+    """
+    try:
+        if not uploaded_file.name.endswith(('.xlsx', '.xls')):
+            st.error("Multi-build format requires Excel files (.xlsx or .xls)")
+            return []
+        
+        # Read the entire sheet without headers
+        raw_df = pd.read_excel(uploaded_file, header=None)
+        
+        # Find build sections by looking for "Build Number" labels
+        build_sections = []
+        
+        # Scan the first 15 rows for "Build Number" labels to find column positions
+        for row_idx in range(min(15, len(raw_df))):
+            row = raw_df.iloc[row_idx]
+            for col_idx, val in enumerate(row):
+                if pd.notna(val) and 'build' in str(val).lower() and 'number' in str(val).lower():
+                    # Found a Build Number label, the next column has the build ID
+                    if col_idx + 1 < len(row):
+                        build_id = row.iloc[col_idx + 1]
+                        if pd.notna(build_id):
+                            # Find the start column for this build (look for metadata in nearby columns)
+                            start_col = col_idx
+                            build_sections.append({
+                                'start_col': start_col,
+                                'build_id': str(build_id),
+                                'row_idx': row_idx
+                            })
+        
+        if not build_sections:
+            st.warning("Could not detect build sections in file. Looking for 'Build Number' labels.")
+            return []
+        
+        # Sort by column position
+        build_sections.sort(key=lambda x: x['start_col'])
+        
+        # Now extract data for each build
+        results = []
+        
+        for i, section in enumerate(build_sections):
+            start_col = section['start_col']
+            build_id = section['build_id']
+            
+            # Determine end column (either next build's start or end of data)
+            if i + 1 < len(build_sections):
+                end_col = build_sections[i + 1]['start_col']
+            else:
+                end_col = len(raw_df.columns)
+            
+            # Extract metadata for this build from the header rows
+            metadata = {
+                'battery_code': None,
+                'temperature': None,
+                'build_id': build_id
+            }
+            
+            standard_params = {
+                'min_activation_voltage': None,
+                'std_max_oc_voltage': None,
+                'std_activation_time_ms': None,
+                'std_duration_sec': None
+            }
+            
+            extended_metadata = {
+                'anode_weight_per_cell': None,
+                'cathode_weight_per_cell': None,
+                'electrolyte_weight': None,
+                'heat_pellet_weight': None,
+                'calorific_value_per_gram': None,
+                'cells_in_series': None,
+                'stacks_in_parallel': None
+            }
+            
+            # Find the data header row (Time, Voltage, Current)
+            data_start_row = 0
+            for row_idx in range(min(20, len(raw_df))):
+                row = raw_df.iloc[row_idx, start_col:end_col]
+                row_strings = [str(val).lower() if pd.notna(val) else "" for val in row]
+                
+                if any('time' in s for s in row_strings):
+                    data_start_row = row_idx
+                    break
+            
+            # Parse metadata from header rows (before data_start_row)
+            for row_idx in range(data_start_row):
+                row = raw_df.iloc[row_idx, start_col:end_col]
+                
+                for col_offset in range(len(row) - 1):
+                    label = str(row.iloc[col_offset]).lower() if pd.notna(row.iloc[col_offset]) else ""
+                    value = row.iloc[col_offset + 1] if col_offset + 1 < len(row) else None
+                    
+                    if not label or not pd.notna(value):
+                        continue
+                    
+                    # Basic metadata
+                    if 'battery' in label and 'code' in label:
+                        metadata['battery_code'] = str(value)
+                    elif 'temperature' in label:
+                        metadata['temperature'] = str(value)
+                    
+                    # Extended build metadata
+                    elif 'anode' in label and 'weight' in label:
+                        try:
+                            extended_metadata['anode_weight_per_cell'] = float(value)
+                        except:
+                            pass
+                    elif 'cathode' in label and 'weight' in label:
+                        try:
+                            extended_metadata['cathode_weight_per_cell'] = float(value)
+                        except:
+                            pass
+                    elif 'electrolyte' in label and 'weight' in label:
+                        try:
+                            extended_metadata['electrolyte_weight'] = float(value)
+                        except:
+                            pass
+                    elif 'heat' in label and 'pellet' in label and 'weight' in label:
+                        try:
+                            extended_metadata['heat_pellet_weight'] = float(value)
+                        except:
+                            pass
+                    elif 'calorific' in label and 'value' in label:
+                        try:
+                            extended_metadata['calorific_value_per_gram'] = float(value)
+                        except:
+                            pass
+                    elif 'cells' in label and 'series' in label:
+                        try:
+                            extended_metadata['cells_in_series'] = int(float(value))
+                        except:
+                            pass
+                    elif 'stacks' in label and 'parallel' in label:
+                        try:
+                            extended_metadata['stacks_in_parallel'] = int(float(value))
+                        except:
+                            pass
+            
+            # Extract data columns for this build
+            # Find the actual data columns (Time, Current, Voltage)
+            header_row = raw_df.iloc[data_start_row, start_col:end_col]
+            data_cols = []
+            col_names = []
+            
+            for col_offset, val in enumerate(header_row):
+                if pd.notna(val) and str(val).strip():
+                    actual_col = start_col + col_offset
+                    data_cols.append(actual_col)
+                    col_names.append(str(val).strip())
+            
+            if len(data_cols) >= 2:  # Need at least Time and Voltage
+                # Extract the data rows
+                build_data = raw_df.iloc[data_start_row + 1:, data_cols].copy()
+                build_data.columns = col_names
+                
+                # Drop empty rows
+                build_data = build_data.dropna(how='all')
+                build_data = build_data.reset_index(drop=True)
+                
+                # Convert numeric columns
+                for col in build_data.columns:
+                    build_data[col] = pd.to_numeric(build_data[col], errors='ignore')
+                
+                # Only add if we have actual data
+                if len(build_data) > 0:
+                    results.append((build_data, metadata, standard_params, extended_metadata))
+        
+        return results
+    
+    except Exception as e:
+        st.error(f"Error loading multi-build file: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())
+        return []
+
 def detect_columns(df):
     """Auto-detect relevant columns in the dataset"""
     time_col = None
