@@ -29,7 +29,8 @@ Preferred communication style: Simple, everyday language.
 ### System Design Choices
 
 **Metrics Redesign**: All timing values are standardized to seconds. Advanced metrics include Weighted Average Voltage, Voltage at Targeted Duration (interpolated), Max OC Voltage Time, Max On-Load Current, and Max On-Load Time.
-**Extended Build Metadata**: Supports detailed battery construction data (e.g., weights, cell configuration, calorific value) with automatic total weight calculations and advanced performance metrics like Ampere-Seconds per gram of Anode/Cathode.
+**Extended Build Metadata**: Supports detailed battery construction data (e.g., weights, cell configuration, calorific value) with automatic total weight calculations and advanced performance metrics like Ampere-Seconds per gram of Active Anode/Cathode.
+**Active Weight Formulas**: A·s per gram calculations use active material weights: Active Anode Weight = Anode Weight × 0.8, Active Cathode Weight = Cathode Weight × 0.7.
 **Discharge Curve Analysis**: Includes ΔV/ΔT analysis at 5-second intervals, detection of constant ΔV/ΔT regions, and plateau detection with actionable outputs.
 **Correlation Analysis**: Examines performance correlations (A·s/gram vs discharge slope) and duration correlations (duration vs total anode/cathode weight, calorific value).
 **Password Protection**: Optional, per-comparison password protection uses Argon2id hashing with salting for security, storing only hashes.

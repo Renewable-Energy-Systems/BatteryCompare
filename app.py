@@ -778,15 +778,19 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                     cathode_per_cell = extended_metadata.get('cathode_weight_per_cell', 0)
                     stacks_in_parallel = extended_metadata.get('stacks_in_parallel', 1)
                     
-                    # Ampere-seconds per gram of anode pellet
+                    # Ampere-seconds per gram of ACTIVE anode pellet
+                    # Active anode weight = anode weight × 0.8
                     if anode_per_cell > 0 and stacks_in_parallel > 0:
-                        metrics['A·s per gram Anode'] = float(total_ampere_seconds / stacks_in_parallel / anode_per_cell)
+                        active_anode_weight = anode_per_cell * 0.8
+                        metrics['A·s per gram Anode'] = float(total_ampere_seconds / stacks_in_parallel / active_anode_weight)
                     else:
                         metrics['A·s per gram Anode'] = None
                     
-                    # Ampere-seconds per gram of cathode pellet
+                    # Ampere-seconds per gram of ACTIVE cathode pellet
+                    # Active cathode weight = cathode weight × 0.7
                     if cathode_per_cell > 0 and stacks_in_parallel > 0:
-                        metrics['A·s per gram Cathode'] = float(total_ampere_seconds / stacks_in_parallel / cathode_per_cell)
+                        active_cathode_weight = cathode_per_cell * 0.7
+                        metrics['A·s per gram Cathode'] = float(total_ampere_seconds / stacks_in_parallel / active_cathode_weight)
                     else:
                         metrics['A·s per gram Cathode'] = None
                 else:
