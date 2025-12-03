@@ -1134,52 +1134,58 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         story.append(Spacer(1, 0.2*inch))
         
         story.append(Paragraph("Performance Comparison vs Standards", heading_style))
+        story.append(Spacer(1, 0.1*inch))
         
-        for build_name in metrics_df.index:
-            comp_data = [['Metric', 'Actual', 'Standard', 'Difference']]
-            
-            if std_max_onload_voltage and 'Max On-Load Voltage (V)' in metrics_df.columns:
-                actual = safe_scalar(metrics_df.loc[build_name, 'Max On-Load Voltage (V)'])
-                if pd.notna(actual):
-                    diff = actual - std_max_onload_voltage
-                    comp_data.append(['Max On-Load V', f"{actual:.3f} V", f"{std_max_onload_voltage} V", f"{diff:+.3f} V"])
-            
-            if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
+        build_list = list(metrics_df.index)
+        header_row = [Paragraph('Metric', table_header_style), Paragraph('Standard', table_header_style)]
+        for build_name in build_list:
+            header_row.append(Paragraph(str(build_name), table_header_style))
+        
+        comp_data = [header_row]
+        
+        if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
+            row = ['Max OC V', f"{std_max_oc_voltage} V"]
+            for build_name in build_list:
                 actual = safe_scalar(metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)'])
-                if pd.notna(actual):
-                    diff = actual - std_max_oc_voltage
-                    comp_data.append(['Max OC V', f"{actual:.3f} V", f"{std_max_oc_voltage} V", f"{diff:+.3f} V"])
-            
-            if std_activation_time and 'Activation Time (Sec)' in metrics_df.columns:
+                row.append(f"{actual:.3f} V" if pd.notna(actual) else "N/A")
+            comp_data.append(row)
+        
+        if std_activation_time and 'Activation Time (Sec)' in metrics_df.columns:
+            std_val = f"{std_activation_time_ms} ms" if std_activation_time_ms else f"{std_activation_time} min"
+            row = ['Activation Time', std_val]
+            for build_name in build_list:
                 actual = safe_scalar(metrics_df.loc[build_name, 'Activation Time (Sec)'])
-                if pd.notna(actual):
-                    diff_sec = actual - (std_activation_time_ms / 1000 if std_activation_time_ms else std_activation_time * 60)
-                    std_val = f"{std_activation_time_ms} ms" if std_activation_time_ms else f"{std_activation_time} min"
-                    comp_data.append(['Activation Time', f"{actual:.3f} sec", std_val, f"{diff_sec:+.3f} sec"])
-            
-            if std_duration and 'Duration (Sec)' in metrics_df.columns:
+                row.append(f"{actual:.3f} sec" if pd.notna(actual) else "N/A")
+            comp_data.append(row)
+        
+        if std_duration and 'Duration (Sec)' in metrics_df.columns:
+            std_val = f"{std_duration_sec} sec" if std_duration_sec else f"{std_duration} min"
+            row = ['Duration', std_val]
+            for build_name in build_list:
                 actual = safe_scalar(metrics_df.loc[build_name, 'Duration (Sec)'])
-                if pd.notna(actual):
-                    diff_sec = actual - (std_duration_sec if std_duration_sec else std_duration * 60)
-                    std_val = f"{std_duration_sec} sec" if std_duration_sec else f"{std_duration} min"
-                    comp_data.append(['Duration', f"{actual:.3f} sec", std_val, f"{diff_sec:+.3f} sec"])
-            
-            story.append(Paragraph(f"<b>{build_name}</b>", styles['Normal']))
-            story.append(Spacer(1, 0.1*inch))
-            
-            comp_table = Table(comp_data, colWidths=[1.8*inch, 1.2*inch, 1.2*inch, 1.2*inch])
-            comp_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
-                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightgrey),
-            ]))
-            
-            story.append(comp_table)
-            story.append(Spacer(1, 0.2*inch))
+                row.append(f"{actual:.3f} sec" if pd.notna(actual) else "N/A")
+            comp_data.append(row)
+        
+        num_builds = len(build_list)
+        col_widths = [1.5*inch, 1.2*inch] + [1.2*inch] * num_builds
+        if sum(col_widths) > 7*inch:
+            col_widths = [1.2*inch, 1*inch] + [0.9*inch] * num_builds
+        
+        comp_table = Table(comp_data, colWidths=col_widths)
+        comp_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightgrey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        
+        story.append(comp_table)
+        story.append(Spacer(1, 0.2*inch))
     
     # Extended Build Metadata Section
     if extended_metadata_list and any(meta for meta in extended_metadata_list):
