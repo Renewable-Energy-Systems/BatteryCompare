@@ -1288,25 +1288,43 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             story.append(Paragraph("Advanced Performance Metrics", heading_style))
             story.append(Spacer(1, 0.1*inch))
             
-            # Wrap headers in Paragraph objects for word wrapping
-            header_row = [Paragraph('Build', table_header_style)]
-            for m in advanced_metrics:
-                if m in metrics_df.columns:
-                    header_row.append(Paragraph(m, table_header_style))
+            # Updated column order with standard reference columns:
+            # Build | Total A·s | LiSi (Standard) | LiSi | FeS2 (Standard) | FeS2
+            header_row = [
+                Paragraph('Build', table_header_style),
+                Paragraph('Total Ampere-Seconds (A·s)', table_header_style),
+                Paragraph('A·s per gm of LiSi (Standard)', table_header_style),
+                Paragraph('A·s per gm of LiSi', table_header_style),
+                Paragraph('A·s per gm of FeS2 (Standard)', table_header_style),
+                Paragraph('A·s per gm of FeS2', table_header_style),
+            ]
             adv_data = [header_row]
             
             for build_name in metrics_df.index:
-                row = [Paragraph(str(build_name), table_cell_left_style)]
-                for metric in advanced_metrics:
-                    if metric in metrics_df.columns:
-                        value = metrics_df.loc[build_name, metric]
-                        if pd.notna(value):
-                            row.append(Paragraph(f"{value:.4f}", table_cell_style))
-                        else:
-                            row.append(Paragraph("N/A", table_cell_style))
+                # Total Ampere-Seconds
+                total_as = metrics_df.loc[build_name, 'Total Ampere-Seconds (A·s)'] if 'Total Ampere-Seconds (A·s)' in metrics_df.columns else None
+                total_as_str = f"{total_as:.4f}" if pd.notna(total_as) else "N/A"
+                
+                # A·s per gm of LiSi
+                lisi_val = metrics_df.loc[build_name, 'A·s per gm of LiSi'] if 'A·s per gm of LiSi' in metrics_df.columns else None
+                lisi_str = f"{lisi_val:.4f}" if pd.notna(lisi_val) else "N/A"
+                
+                # A·s per gm of FeS2
+                fes2_val = metrics_df.loc[build_name, 'A·s per gm of FeS2'] if 'A·s per gm of FeS2' in metrics_df.columns else None
+                fes2_str = f"{fes2_val:.4f}" if pd.notna(fes2_val) else "N/A"
+                
+                row = [
+                    Paragraph(str(build_name), table_cell_left_style),
+                    Paragraph(total_as_str, table_cell_style),
+                    Paragraph("-", table_cell_style),  # LiSi Standard (blank for now)
+                    Paragraph(lisi_str, table_cell_style),
+                    Paragraph("-", table_cell_style),  # FeS2 Standard (blank for now)
+                    Paragraph(fes2_str, table_cell_style),
+                ]
                 adv_data.append(row)
             
-            col_widths = [1.5*inch] + [1.3*inch] * (len(adv_data[0]) - 1)
+            # Fixed column widths for 6 columns
+            col_widths = [1.4*inch, 1.1*inch, 1.1*inch, 1.0*inch, 1.1*inch, 1.0*inch]
             adv_table = Table(adv_data, colWidths=col_widths)
             adv_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#9467bd')),
