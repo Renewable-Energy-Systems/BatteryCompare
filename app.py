@@ -1156,46 +1156,61 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         story.append(Spacer(1, 0.1*inch))
         
         build_list = list(metrics_df.index)
-        header_row = [Paragraph('Metric', table_header_style), Paragraph('Standard', table_header_style)]
-        for build_name in build_list:
-            header_row.append(Paragraph(str(build_name), table_header_style))
+        
+        # Vertical format: builds as rows, metrics as columns
+        # Header row: Build | Max OCV (V) | Activation Time (sec) | Duration (sec)
+        header_row = [Paragraph('Build', table_header_style)]
+        
+        # Determine which columns to include based on available standards
+        has_ocv = std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns
+        has_activation = std_activation_time and 'Activation Time (Sec)' in metrics_df.columns
+        has_duration = std_duration and 'Duration (Sec)' in metrics_df.columns
+        
+        if has_ocv:
+            header_row.append(Paragraph('Max OCV (V)', table_header_style))
+        if has_activation:
+            header_row.append(Paragraph('Activation Time (sec)', table_header_style))
+        if has_duration:
+            header_row.append(Paragraph('Duration (sec)', table_header_style))
         
         comp_data = [header_row]
         
-        if std_max_oc_voltage and 'Max Open Circuit Voltage (V)' in metrics_df.columns:
-            row = [Paragraph('Max OC V', table_cell_left_style), Paragraph(f"{std_max_oc_voltage} V", table_cell_style)]
-            for build_name in build_list:
+        # Standard row (baseline at top)
+        std_row = [Paragraph('Standard', table_cell_left_style)]
+        if has_ocv:
+            std_row.append(Paragraph(f"{std_max_oc_voltage}", table_cell_style))
+        if has_activation:
+            std_activation_sec = std_activation_time_ms / 1000.0 if std_activation_time_ms else std_activation_time * 60
+            std_row.append(Paragraph(f"{std_activation_sec:.3f}", table_cell_style))
+        if has_duration:
+            std_row.append(Paragraph(f"{std_duration_sec}", table_cell_style))
+        comp_data.append(std_row)
+        
+        # Build rows
+        for build_name in build_list:
+            row = [Paragraph(str(build_name), table_cell_left_style)]
+            if has_ocv:
                 actual = safe_scalar(metrics_df.loc[build_name, 'Max Open Circuit Voltage (V)'])
-                row.append(Paragraph(f"{actual:.3f} V" if pd.notna(actual) else "N/A", table_cell_style))
-            comp_data.append(row)
-        
-        if std_activation_time and 'Activation Time (Sec)' in metrics_df.columns:
-            std_val = f"{std_activation_time_ms} ms" if std_activation_time_ms else f"{std_activation_time} min"
-            row = [Paragraph('Activation Time', table_cell_left_style), Paragraph(std_val, table_cell_style)]
-            for build_name in build_list:
+                row.append(Paragraph(f"{actual:.3f}" if pd.notna(actual) else "N/A", table_cell_style))
+            if has_activation:
                 actual = safe_scalar(metrics_df.loc[build_name, 'Activation Time (Sec)'])
-                row.append(Paragraph(f"{actual:.3f} sec" if pd.notna(actual) else "N/A", table_cell_style))
-            comp_data.append(row)
-        
-        if std_duration and 'Duration (Sec)' in metrics_df.columns:
-            std_val = f"{std_duration_sec} sec" if std_duration_sec else f"{std_duration} min"
-            row = [Paragraph('Duration', table_cell_left_style), Paragraph(std_val, table_cell_style)]
-            for build_name in build_list:
+                row.append(Paragraph(f"{actual:.3f}" if pd.notna(actual) else "N/A", table_cell_style))
+            if has_duration:
                 actual = safe_scalar(metrics_df.loc[build_name, 'Duration (Sec)'])
-                row.append(Paragraph(f"{actual:.3f} sec" if pd.notna(actual) else "N/A", table_cell_style))
+                row.append(Paragraph(f"{actual:.3f}" if pd.notna(actual) else "N/A", table_cell_style))
             comp_data.append(row)
         
-        num_builds = len(build_list)
-        col_widths = [1.5*inch, 1.2*inch] + [1.2*inch] * num_builds
-        if sum(col_widths) > 7*inch:
-            col_widths = [1.2*inch, 1*inch] + [0.9*inch] * num_builds
+        # Fixed column widths for vertical format (scalable for many builds)
+        num_cols = len(header_row)
+        col_widths = [2.5*inch] + [1.5*inch] * (num_cols - 1)
         
         comp_table = Table(comp_data, colWidths=col_widths)
         comp_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), rl_colors.grey),
             ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
             ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
-            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightgrey),
+            ('BACKGROUND', (0, 1), (-1, 1), rl_colors.HexColor('#ffe6cc')),  # Standard row highlighted
+            ('BACKGROUND', (0, 2), (-1, -1), rl_colors.lightgrey),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),

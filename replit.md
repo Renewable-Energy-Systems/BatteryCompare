@@ -180,3 +180,18 @@ Preferred communication style: Simple, everyday language.
 - Total Calories (cal) = Total Heat Pellet × 260
 
 **Verification**: Calculations, PDF export, and correlation analysis updated with new names.
+
+### Performance Comparison Table Vertical Format (December 2025) ✅
+**Core Feature**: Reformatted "Performance Comparison vs Standards" table to vertical layout for better scalability.
+
+**New Format**:
+- First column: Build name
+- Following columns: Max OCV (V), Activation Time (sec), Duration (sec)
+- Standard row at top as baseline (highlighted in light orange)
+- Build rows follow below in light grey
+- Fixed column widths: Build 2.5", metrics 1.5" each
+
+**Benefits**:
+- Scales vertically with more builds (no horizontal stretching)
+- Consistent layout regardless of number of builds
+- Standard values clearly visible as baseline row
