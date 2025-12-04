@@ -778,26 +778,26 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                     cathode_per_cell = extended_metadata.get('cathode_weight_per_cell', 0)
                     stacks_in_parallel = extended_metadata.get('stacks_in_parallel', 1)
                     
-                    # Ampere-seconds per gram of ACTIVE anode pellet
+                    # Ampere-seconds per gram of ACTIVE anode (LiSi)
                     # Active anode weight = anode weight × 0.8
                     if anode_per_cell > 0 and stacks_in_parallel > 0:
                         active_anode_weight = anode_per_cell * 0.8
-                        metrics['A·s per gram Anode'] = float(total_ampere_seconds / stacks_in_parallel / active_anode_weight)
+                        metrics['A·s per gm of LiSi'] = float(total_ampere_seconds / stacks_in_parallel / active_anode_weight)
                     else:
-                        metrics['A·s per gram Anode'] = None
+                        metrics['A·s per gm of LiSi'] = None
                     
-                    # Ampere-seconds per gram of ACTIVE cathode pellet
+                    # Ampere-seconds per gram of ACTIVE cathode (FeS₂)
                     # Active cathode weight = cathode weight × 0.7
                     if cathode_per_cell > 0 and stacks_in_parallel > 0:
                         active_cathode_weight = cathode_per_cell * 0.7
-                        metrics['A·s per gram Cathode'] = float(total_ampere_seconds / stacks_in_parallel / active_cathode_weight)
+                        metrics['A·s per gm of FeS₂'] = float(total_ampere_seconds / stacks_in_parallel / active_cathode_weight)
                     else:
-                        metrics['A·s per gram Cathode'] = None
+                        metrics['A·s per gm of FeS₂'] = None
                 else:
                     # No discharge period found
                     metrics['Total Ampere-Seconds (A·s)'] = None
-                    metrics['A·s per gram Anode'] = None
-                    metrics['A·s per gram Cathode'] = None
+                    metrics['A·s per gm of LiSi'] = None
+                    metrics['A·s per gm of FeS₂'] = None
     
     return metrics
 
@@ -1226,6 +1226,8 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             ('calorific_value_per_gram', 'Calorific Value (cal/g)', lambda v: f"{v:.0f}"),
             ('total_anode_weight', 'Total Anode (g)', lambda v: f"{v:.2f}"),
             ('total_cathode_weight', 'Total Cathode (g)', lambda v: f"{v:.2f}"),
+            ('total_heat_pellet_weight', 'Total Heat Pellet (g)', lambda v: f"{v:.2f}"),
+            ('total_calories', 'Total Calories (cal)', lambda v: f"{v:.0f}"),
             ('total_stack_weight', 'Total Stack (g)', lambda v: f"{v:.2f}"),
             ('total_calorific_value', 'Total Calorific (kJ)', lambda v: f"{v:.2f}"),
         ]
@@ -1263,8 +1265,8 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
     
     # Advanced Performance Metrics Section
     if metrics_df is not None and not metrics_df.empty:
-        advanced_metrics = ['Total Ampere-Seconds (A·s)', 'A·s per gram Anode', 
-                          'A·s per gram Cathode']
+        advanced_metrics = ['Total Ampere-Seconds (A·s)', 'A·s per gm of LiSi', 
+                          'A·s per gm of FeS₂']
         
         if any(m in metrics_df.columns for m in advanced_metrics):
             story.append(PageBreak())
@@ -1841,11 +1843,11 @@ def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
     slope_variabilities = []
     
     for metrics, analytics in zip(all_metrics_list, all_analytics_list):
-        # Ampere-seconds per gram metrics
-        if metrics.get('A·s per gram Anode') is not None:
-            ampere_secs_anode.append(metrics['A·s per gram Anode'])
-        if metrics.get('A·s per gram Cathode') is not None:
-            ampere_secs_cathode.append(metrics['A·s per gram Cathode'])
+        # Ampere-seconds per gram metrics (LiSi = anode, FeS₂ = cathode)
+        if metrics.get('A·s per gm of LiSi') is not None:
+            ampere_secs_anode.append(metrics['A·s per gm of LiSi'])
+        if metrics.get('A·s per gm of FeS₂') is not None:
+            ampere_secs_cathode.append(metrics['A·s per gm of FeS₂'])
         
         # Discharge curve characteristics
         if analytics.get('ΔV/ΔT Mean (V/s)') is not None:
@@ -1857,7 +1859,7 @@ def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
     if len(ampere_secs_anode) >= 2 and len(mean_slopes) >= 2 and len(ampere_secs_anode) == len(mean_slopes):
         try:
             corr_coef, p_value = stats.pearsonr(ampere_secs_anode, mean_slopes)
-            correlations['A·s/g Anode vs Mean Slope'] = {
+            correlations['A·s/g LiSi vs Mean Slope'] = {
                 'correlation': float(corr_coef),
                 'p_value': float(p_value),
                 'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',
@@ -1870,7 +1872,7 @@ def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
     if len(ampere_secs_cathode) >= 2 and len(mean_slopes) >= 2 and len(ampere_secs_cathode) == len(mean_slopes):
         try:
             corr_coef, p_value = stats.pearsonr(ampere_secs_cathode, mean_slopes)
-            correlations['A·s/g Cathode vs Mean Slope'] = {
+            correlations['A·s/g FeS₂ vs Mean Slope'] = {
                 'correlation': float(corr_coef),
                 'p_value': float(p_value),
                 'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',
@@ -1884,7 +1886,7 @@ def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
     if len(ampere_secs_anode) >= 2 and len(ampere_secs_cathode) >= 2 and len(ampere_secs_anode) == len(ampere_secs_cathode):
         try:
             corr_coef, p_value = stats.pearsonr(ampere_secs_anode, ampere_secs_cathode)
-            correlations['Anode vs Cathode Performance'] = {
+            correlations['LiSi vs FeS₂ Performance'] = {
                 'correlation': float(corr_coef),
                 'p_value': float(p_value),
                 'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',
@@ -2604,6 +2606,7 @@ if data_mode == "Upload Files":
                         total_heat_pellet = heat_pellet_weight * cells_in_series * stacks_in_parallel if heat_pellet_weight > 0 else 0
                         total_electrolyte = electrolyte_weight * cells_in_series * stacks_in_parallel if electrolyte_weight > 0 else 0
                         total_stack_weight = (anode_weight + cathode_weight + heat_pellet_weight + electrolyte_weight) * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
+                        total_calories = total_heat_pellet * 260 if total_heat_pellet > 0 else 0
                         total_calorific = total_heat_pellet * calorific_value * 0.004184 if calorific_value > 0 and total_heat_pellet > 0 else 0
                         
                         st.session_state['build_metadata_extended'][i] = {
@@ -2617,6 +2620,7 @@ if data_mode == "Upload Files":
                             'total_anode_weight': total_anode,
                             'total_cathode_weight': total_cathode,
                             'total_heat_pellet_weight': total_heat_pellet,
+                            'total_calories': total_calories,
                             'total_electrolyte_weight': total_electrolyte,
                             'total_stack_weight': total_stack_weight,
                             'total_calorific_value': total_calorific
@@ -2755,6 +2759,9 @@ if data_mode == "Upload Files":
                 total_electrolyte = electrolyte_weight * cells_in_series * stacks_in_parallel if electrolyte_weight > 0 else 0
                 total_stack_weight = (anode_weight + cathode_weight + heat_pellet_weight + electrolyte_weight) * cells_in_series * stacks_in_parallel if cells_in_series > 0 and stacks_in_parallel > 0 else 0
                 
+                # Total calories = total heat pellet weight (g) × 260 (cal/g)
+                total_calories = total_heat_pellet * 260 if total_heat_pellet > 0 else 0
+                
                 # Total calorific value (kJ) = total heat pellet weight (g) × calorific value (cal/g) × 0.004184 (cal to kJ conversion)
                 total_calorific = total_heat_pellet * calorific_value * 0.004184 if calorific_value > 0 and total_heat_pellet > 0 else 0
                 
@@ -2769,6 +2776,7 @@ if data_mode == "Upload Files":
                     'total_anode_weight': total_anode,
                     'total_cathode_weight': total_cathode,
                     'total_heat_pellet_weight': total_heat_pellet,
+                    'total_calories': total_calories,
                     'total_electrolyte_weight': total_electrolyte,
                     'total_stack_weight': total_stack_weight,
                     'total_calorific_value': total_calorific

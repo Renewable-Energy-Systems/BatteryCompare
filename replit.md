@@ -163,3 +163,20 @@ Preferred communication style: Simple, everyday language.
 - Correlation Analysis, Duration Correlations
 
 **Verification**: End-to-end tests confirm PDF export works with no text overlap.
+
+### Active Weight Metrics & Column Renaming (December 2025) ✅
+**Core Feature**: Updated A·s per gram calculations to use active weights and renamed columns for clarity.
+
+**Formula Changes**:
+- A·s per gm of LiSi = Total A·s / Stacks / (Anode Weight × 0.8)
+- A·s per gm of FeS₂ = Total A·s / Stacks / (Cathode Weight × 0.7)
+
+**Column Renames**:
+- "A·s per gram Anode" → "A·s per gm of LiSi"
+- "A·s per gram Cathode" → "A·s per gm of FeS₂"
+
+**Extended Build Metadata Additions**:
+- Total Heat Pellet (g) = Heat Pellet per cell × Cells × Stacks
+- Total Calories (cal) = Total Heat Pellet × 260
+
+**Verification**: Calculations, PDF export, and correlation analysis updated with new names.
