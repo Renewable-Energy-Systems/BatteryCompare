@@ -786,18 +786,18 @@ def calculate_metrics(df, time_col, voltage_col, current_col=None, min_activatio
                     else:
                         metrics['A·s per gm of LiSi'] = None
                     
-                    # Ampere-seconds per gram of ACTIVE cathode (FeS₂)
+                    # Ampere-seconds per gram of ACTIVE cathode (FeS2)
                     # Active cathode weight = cathode weight × 0.7
                     if cathode_per_cell > 0 and stacks_in_parallel > 0:
                         active_cathode_weight = cathode_per_cell * 0.7
-                        metrics['A·s per gm of FeS₂'] = float(total_ampere_seconds / stacks_in_parallel / active_cathode_weight)
+                        metrics['A·s per gm of FeS2'] = float(total_ampere_seconds / stacks_in_parallel / active_cathode_weight)
                     else:
-                        metrics['A·s per gm of FeS₂'] = None
+                        metrics['A·s per gm of FeS2'] = None
                 else:
                     # No discharge period found
                     metrics['Total Ampere-Seconds (A·s)'] = None
                     metrics['A·s per gm of LiSi'] = None
-                    metrics['A·s per gm of FeS₂'] = None
+                    metrics['A·s per gm of FeS2'] = None
     
     return metrics
 
@@ -1281,7 +1281,7 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
     # Advanced Performance Metrics Section
     if metrics_df is not None and not metrics_df.empty:
         advanced_metrics = ['Total Ampere-Seconds (A·s)', 'A·s per gm of LiSi', 
-                          'A·s per gm of FeS₂']
+                          'A·s per gm of FeS2']
         
         if any(m in metrics_df.columns for m in advanced_metrics):
             story.append(PageBreak())
@@ -1858,11 +1858,11 @@ def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
     slope_variabilities = []
     
     for metrics, analytics in zip(all_metrics_list, all_analytics_list):
-        # Ampere-seconds per gram metrics (LiSi = anode, FeS₂ = cathode)
+        # Ampere-seconds per gram metrics (LiSi = anode, FeS2 = cathode)
         if metrics.get('A·s per gm of LiSi') is not None:
             ampere_secs_anode.append(metrics['A·s per gm of LiSi'])
-        if metrics.get('A·s per gm of FeS₂') is not None:
-            ampere_secs_cathode.append(metrics['A·s per gm of FeS₂'])
+        if metrics.get('A·s per gm of FeS2') is not None:
+            ampere_secs_cathode.append(metrics['A·s per gm of FeS2'])
         
         # Discharge curve characteristics
         if analytics.get('ΔV/ΔT Mean (V/s)') is not None:
@@ -1887,7 +1887,7 @@ def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
     if len(ampere_secs_cathode) >= 2 and len(mean_slopes) >= 2 and len(ampere_secs_cathode) == len(mean_slopes):
         try:
             corr_coef, p_value = stats.pearsonr(ampere_secs_cathode, mean_slopes)
-            correlations['A·s/g FeS₂ vs Mean Slope'] = {
+            correlations['A·s/g FeS2 vs Mean Slope'] = {
                 'correlation': float(corr_coef),
                 'p_value': float(p_value),
                 'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',
@@ -1901,7 +1901,7 @@ def calculate_correlation_analysis(all_metrics_list, all_analytics_list):
     if len(ampere_secs_anode) >= 2 and len(ampere_secs_cathode) >= 2 and len(ampere_secs_anode) == len(ampere_secs_cathode):
         try:
             corr_coef, p_value = stats.pearsonr(ampere_secs_anode, ampere_secs_cathode)
-            correlations['LiSi vs FeS₂ Performance'] = {
+            correlations['LiSi vs FeS2 Performance'] = {
                 'correlation': float(corr_coef),
                 'p_value': float(p_value),
                 'strength': 'Strong' if abs(corr_coef) > 0.7 else 'Moderate' if abs(corr_coef) > 0.4 else 'Weak',

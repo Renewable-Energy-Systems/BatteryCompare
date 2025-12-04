@@ -169,11 +169,11 @@ Preferred communication style: Simple, everyday language.
 
 **Formula Changes**:
 - A·s per gm of LiSi = Total A·s / Stacks / (Anode Weight × 0.8)
-- A·s per gm of FeS₂ = Total A·s / Stacks / (Cathode Weight × 0.7)
+- A·s per gm of FeS2 = Total A·s / Stacks / (Cathode Weight × 0.7)
 
 **Column Renames**:
 - "A·s per gram Anode" → "A·s per gm of LiSi"
-- "A·s per gram Cathode" → "A·s per gm of FeS₂"
+- "A·s per gram Cathode" → "A·s per gm of FeS2"
 
 **Extended Build Metadata Additions**:
 - Total Heat Pellet (g) = Heat Pellet per cell × Cells × Stacks
