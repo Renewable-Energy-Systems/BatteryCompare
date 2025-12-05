@@ -2465,7 +2465,7 @@ if data_mode == "Upload Files":
         # Upload mode toggle
         use_multi_build_file = st.sidebar.checkbox(
             "📁 Single file for all builds", 
-            value=False,
+            value=True,
             help="Upload one Excel file containing all builds arranged horizontally. Each build should have a 'Build Number' label in the metadata."
         )
         
