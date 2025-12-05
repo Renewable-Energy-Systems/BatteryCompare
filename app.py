@@ -2481,12 +2481,17 @@ if data_mode == "Upload Files":
         )
         
         # Clear stale multi-build state when switching to individual file mode
-        if not use_multi_build_file and 'multi_build_results' in st.session_state:
-            del st.session_state['multi_build_results']
+        if not use_multi_build_file:
+            if 'multi_build_results' in st.session_state:
+                del st.session_state['multi_build_results']
             if 'multi_build_processed' in st.session_state:
                 del st.session_state['multi_build_processed']
             if 'multi_build_file_id' in st.session_state:
                 del st.session_state['multi_build_file_id']
+            if 'multi_build_success' in st.session_state:
+                del st.session_state['multi_build_success']
+            if 'multi_build_error' in st.session_state:
+                del st.session_state['multi_build_error']
         
         if use_multi_build_file:
             # Multi-build file upload mode
@@ -2514,6 +2519,9 @@ if data_mode == "Upload Files":
                     st.session_state['multi_build_results'] = build_results
                     st.session_state['multi_build_file_id'] = current_file_id
                     st.session_state['multi_build_success'] = len(build_results)
+                    # Clear any previous error
+                    if 'multi_build_error' in st.session_state:
+                        del st.session_state['multi_build_error']
                     
                     # Update num_builds based on detected builds
                     num_builds = len(build_results)
@@ -2529,10 +2537,51 @@ if data_mode == "Upload Files":
                             st.session_state[f'cells_series_{i}'] = int(ext_meta.get('cells_in_series', 1) or 1)
                             st.session_state[f'stacks_parallel_{i}'] = int(ext_meta.get('stacks_in_parallel', 1) or 1)
                             st.session_state[f'calorific_value_{i}'] = float(ext_meta.get('calorific_value_per_gram', 0) or 0)
+                else:
+                    # Multi-build parsing failed - try fallback to single file parsing
+                    multi_build_file.seek(0)  # Reset file pointer
+                    df, metadata, standard_params, file_extended_metadata = load_data(multi_build_file)
                     
+                    if df is not None and len(df) > 0:
+                        # Single file parsed successfully - treat as single build
+                        build_results = [(df, metadata if metadata else {}, standard_params if standard_params else {}, file_extended_metadata if file_extended_metadata else {})]
+                        st.session_state['multi_build_processed'] = True
+                        st.session_state['multi_build_results'] = build_results
+                        st.session_state['multi_build_file_id'] = current_file_id
+                        st.session_state['multi_build_success'] = 1
+                        # Clear any previous error
+                        if 'multi_build_error' in st.session_state:
+                            del st.session_state['multi_build_error']
+                        
+                        # Initialize session_state for this single build
+                        if file_extended_metadata:
+                            st.session_state['anode_weight_0'] = float(file_extended_metadata.get('anode_weight_per_cell', 0) or 0)
+                            st.session_state['cathode_weight_0'] = float(file_extended_metadata.get('cathode_weight_per_cell', 0) or 0)
+                            st.session_state['heat_pellet_0'] = float(file_extended_metadata.get('heat_pellet_weight', 0) or 0)
+                            st.session_state['electrolyte_0'] = float(file_extended_metadata.get('electrolyte_weight', 0) or 0)
+                            st.session_state['cells_series_0'] = int(file_extended_metadata.get('cells_in_series', 1) or 1)
+                            st.session_state['stacks_parallel_0'] = int(file_extended_metadata.get('stacks_in_parallel', 1) or 1)
+                            st.session_state['calorific_value_0'] = float(file_extended_metadata.get('calorific_value_per_gram', 0) or 0)
+                        
+                        st.sidebar.info("📄 File parsed as single build (no multi-build structure detected)")
+                    else:
+                        # Both parsing methods failed
+                        st.session_state['multi_build_error'] = "Could not parse file. Please check the format."
+                        st.session_state['multi_build_processed'] = True
+                        st.session_state['multi_build_file_id'] = current_file_id
+                        # Clear stale results
+                        if 'multi_build_results' in st.session_state:
+                            del st.session_state['multi_build_results']
+                        if 'multi_build_success' in st.session_state:
+                            del st.session_state['multi_build_success']
+                    
+            # Show error message if parsing failed
+            if 'multi_build_error' in st.session_state:
+                st.sidebar.error(f"❌ {st.session_state['multi_build_error']}")
+            
             # Show success message when builds are detected
             if 'multi_build_success' in st.session_state:
-                st.sidebar.success(f"✅ Detected {st.session_state['multi_build_success']} builds in file!")
+                st.sidebar.success(f"✅ Detected {st.session_state['multi_build_success']} build(s) in file!")
             
             # Display detected builds and their metadata forms
             if 'multi_build_results' in st.session_state:
@@ -2659,6 +2708,8 @@ if data_mode == "Upload Files":
                         del st.session_state['multi_build_file_id']
                     if 'multi_build_success' in st.session_state:
                         del st.session_state['multi_build_success']
+                    if 'multi_build_error' in st.session_state:
+                        del st.session_state['multi_build_error']
                     st.rerun()
         else:
             # Individual file upload mode (original behavior)
