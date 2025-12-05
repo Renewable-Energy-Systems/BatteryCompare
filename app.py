@@ -2305,7 +2305,8 @@ std_duration = None
 if data_mode == "Upload Files":
     st.sidebar.markdown("Upload battery discharge data files for comparison")
     
-    num_builds = st.sidebar.number_input("Number of builds to compare:", min_value=1, max_value=50, value=2, step=1)
+    # num_builds will be set based on upload mode (multi-build or individual)
+    num_builds = 2  # Default, will be updated based on mode
     
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ Performance Specifications")
@@ -2654,6 +2655,7 @@ if data_mode == "Upload Files":
                     st.rerun()
         else:
             # Individual file upload mode (original behavior)
+            num_builds = st.sidebar.number_input("Number of builds to compare:", min_value=1, max_value=50, value=2, step=1)
             uploaded_files = []
             for i in range(num_builds):
                 st.sidebar.markdown(f"### Build {i+1}")
