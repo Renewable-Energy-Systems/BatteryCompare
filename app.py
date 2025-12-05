@@ -283,11 +283,11 @@ def load_multi_build_file(uploaded_file):
         # Find build sections by looking for "Build Number" labels
         build_sections = []
         
-        # Scan the first 15 rows for "Build Number" labels to find column positions
-        for row_idx in range(min(15, len(raw_df))):
+        # Scan the first 20 rows for "Build Number" labels to find column positions
+        for row_idx in range(min(20, len(raw_df))):
             row = raw_df.iloc[row_idx]
             for col_idx, val in enumerate(row):
-                if pd.notna(val) and 'build' in str(val).lower() and 'number' in str(val).lower():
+                if pd.notna(val) and 'build' in str(val).lower().strip() and 'number' in str(val).lower().strip():
                     # Found a Build Number label, the next column has the build ID
                     if col_idx + 1 < len(row):
                         build_id = row.iloc[col_idx + 1]
@@ -300,8 +300,69 @@ def load_multi_build_file(uploaded_file):
                                 'row_idx': row_idx
                             })
         
+        # BACKUP DETECTION: If Build Number detection found fewer than 2 builds,
+        # try detecting builds by looking for "Time" column headers in the data row
+        if len(build_sections) < 2:
+            # Find the data header row (contains "Time" columns)
+            data_header_row = None
+            time_columns = []
+            
+            for row_idx in range(min(30, len(raw_df))):
+                row = raw_df.iloc[row_idx]
+                row_time_cols = []
+                for col_idx, val in enumerate(row):
+                    if pd.notna(val) and 'time' in str(val).lower().strip():
+                        row_time_cols.append(col_idx)
+                
+                # If we found multiple "Time" columns in this row, this is likely the data header
+                if len(row_time_cols) >= 2:
+                    data_header_row = row_idx
+                    time_columns = row_time_cols
+                    break
+                elif len(row_time_cols) == 1 and len(time_columns) == 0:
+                    # Keep track in case there's only one Time column
+                    data_header_row = row_idx
+                    time_columns = row_time_cols
+            
+            # If we found Time columns, use them as build start positions
+            if len(time_columns) >= 1:
+                build_sections = []
+                for idx, time_col in enumerate(time_columns):
+                    # Look backwards in this column range to find Build Number value
+                    build_id = str(idx + 1)  # Default to sequential numbering
+                    
+                    # The metadata labels might be in the same column as Time header
+                    # or in a column just before it. Check both.
+                    search_start = max(0, time_col - 1)
+                    search_end = min(len(raw_df.columns), time_col + 4)
+                    
+                    # Search metadata rows above data header for Build Number
+                    if data_header_row is not None:
+                        found_build_id = False
+                        for meta_row_idx in range(data_header_row):
+                            if found_build_id:
+                                break
+                            meta_row = raw_df.iloc[meta_row_idx]
+                            # Check columns near the Time column for Build Number
+                            for check_col in range(search_start, search_end):
+                                label = str(meta_row.iloc[check_col]).lower().strip() if pd.notna(meta_row.iloc[check_col]) else ""
+                                if 'build' in label and 'number' in label:
+                                    # Found Build Number label, get the value from next column
+                                    if check_col + 1 < len(meta_row) and pd.notna(meta_row.iloc[check_col + 1]):
+                                        build_id = str(meta_row.iloc[check_col + 1])
+                                        found_build_id = True
+                                        break
+                    
+                    # Use the Time column position as start (metadata labels are typically in same column)
+                    build_sections.append({
+                        'start_col': time_col,
+                        'build_id': build_id,
+                        'row_idx': data_header_row if data_header_row else 0,
+                        'detected_via': 'time_header'  # Mark how this was detected
+                    })
+        
         if not build_sections:
-            st.warning("Could not detect build sections in file. Looking for 'Build Number' labels.")
+            st.warning("Could not detect build sections in file. Looking for 'Build Number' labels or 'Time' column headers.")
             return []
         
         # Sort by column position
@@ -313,12 +374,17 @@ def load_multi_build_file(uploaded_file):
         for i, section in enumerate(build_sections):
             start_col = section['start_col']
             build_id = section['build_id']
+            detected_via = section.get('detected_via', 'build_number')
             
             # Determine end column (either next build's start or end of data)
             if i + 1 < len(build_sections):
                 end_col = build_sections[i + 1]['start_col']
             else:
                 end_col = len(raw_df.columns)
+            
+            # For metadata extraction, expand the range to include column before start_col
+            # This helps when labels are in column to the left of Time header
+            metadata_start_col = max(0, start_col - 1) if detected_via == 'time_header' else start_col
             
             # Extract metadata for this build from the header rows
             metadata = {
@@ -356,7 +422,7 @@ def load_multi_build_file(uploaded_file):
             
             # Parse metadata from header rows (before data_start_row)
             for row_idx in range(data_start_row):
-                row = raw_df.iloc[row_idx, start_col:end_col]
+                row = raw_df.iloc[row_idx, metadata_start_col:end_col]
                 
                 for col_offset in range(len(row) - 1):
                     label = str(row.iloc[col_offset]).lower() if pd.notna(row.iloc[col_offset]) else ""
