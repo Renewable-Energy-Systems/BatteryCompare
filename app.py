@@ -1061,6 +1061,7 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                         std_max_oc_voltage=None, std_activation_time=None, 
                         std_duration=None, std_activation_time_ms=None,
                         std_duration_sec=None,
+                        std_lisi=None, std_fes2=None,
                         extended_metadata_list=None,
                         analytics_list=None,
                         correlations=None,
@@ -1358,33 +1359,75 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
     
     # Advanced Performance Metrics Section
     if metrics_df is not None and not metrics_df.empty:
-        advanced_metrics = ['Total Ampere-Seconds (A·s)', 'A·s per gm of LiSi', 
-                          'A·s per gm of FeS2']
+        # Check if we have the main metrics
+        has_total_as = 'Total Ampere-Seconds (A·s)' in metrics_df.columns
+        has_lisi = 'A·s per gm of LiSi' in metrics_df.columns
+        has_fes2 = 'A·s per gm of FeS2' in metrics_df.columns
         
-        if any(m in metrics_df.columns for m in advanced_metrics):
+        if has_total_as or has_lisi or has_fes2:
             story.append(PageBreak())
             story.append(Paragraph("Advanced Performance Metrics", heading_style))
             story.append(Spacer(1, 0.1*inch))
             
-            # Wrap headers in Paragraph objects for word wrapping
+            # Build header row with standard columns
             header_row = [Paragraph('Build', table_header_style)]
-            for m in advanced_metrics:
-                if m in metrics_df.columns:
-                    header_row.append(Paragraph(m, table_header_style))
+            if has_total_as:
+                header_row.append(Paragraph('Total Ampere-Seconds (A·s)', table_header_style))
+            if has_lisi:
+                header_row.append(Paragraph('LiSi Standard (A·s/g)', table_header_style))
+                header_row.append(Paragraph('A·s per gm of LiSi', table_header_style))
+            if has_fes2:
+                header_row.append(Paragraph('FeS₂ Standard (A·s/g)', table_header_style))
+                header_row.append(Paragraph('A·s per gm of FeS₂', table_header_style))
             adv_data = [header_row]
             
             for build_name in metrics_df.index:
                 row = [Paragraph(str(build_name), table_cell_left_style)]
-                for metric in advanced_metrics:
-                    if metric in metrics_df.columns:
-                        value = metrics_df.loc[build_name, metric]
-                        if pd.notna(value):
-                            row.append(Paragraph(f"{value:.4f}", table_cell_style))
-                        else:
-                            row.append(Paragraph("N/A", table_cell_style))
+                
+                # Total Ampere-Seconds
+                if has_total_as:
+                    value = metrics_df.loc[build_name, 'Total Ampere-Seconds (A·s)']
+                    if pd.notna(value):
+                        row.append(Paragraph(f"{value:.4f}", table_cell_style))
+                    else:
+                        row.append(Paragraph("N/A", table_cell_style))
+                
+                # LiSi Standard and A·s per gm of LiSi
+                if has_lisi:
+                    # LiSi Standard column
+                    if std_lisi is not None:
+                        row.append(Paragraph(f"{std_lisi}", table_cell_style))
+                    else:
+                        row.append(Paragraph("-", table_cell_style))
+                    # A·s per gm of LiSi
+                    value = metrics_df.loc[build_name, 'A·s per gm of LiSi']
+                    if pd.notna(value):
+                        row.append(Paragraph(f"{value:.4f}", table_cell_style))
+                    else:
+                        row.append(Paragraph("N/A", table_cell_style))
+                
+                # FeS₂ Standard and A·s per gm of FeS₂
+                if has_fes2:
+                    # FeS₂ Standard column
+                    if std_fes2 is not None:
+                        row.append(Paragraph(f"{std_fes2}", table_cell_style))
+                    else:
+                        row.append(Paragraph("-", table_cell_style))
+                    # A·s per gm of FeS₂
+                    value = metrics_df.loc[build_name, 'A·s per gm of FeS2']
+                    if pd.notna(value):
+                        row.append(Paragraph(f"{value:.4f}", table_cell_style))
+                    else:
+                        row.append(Paragraph("N/A", table_cell_style))
+                
                 adv_data.append(row)
             
-            col_widths = [1.5*inch] + [1.3*inch] * (len(adv_data[0]) - 1)
+            # Adjust column widths based on number of columns
+            num_cols = len(adv_data[0])
+            col_widths = [1.5*inch] + [1.1*inch] * (num_cols - 1)
+            if sum(col_widths) > 7.5*inch:
+                col_widths = [1.3*inch] + [0.95*inch] * (num_cols - 1)
+            
             adv_table = Table(adv_data, colWidths=col_widths)
             adv_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#9467bd')),
@@ -2483,6 +2526,25 @@ if data_mode == "Upload Files":
         )
         # Convert seconds to minutes for comparison with metrics
         std_duration = std_duration_sec / 60.0 if std_duration_sec > 0 else None
+        
+        st.sidebar.markdown("**Advanced Metrics Standards**")
+        std_lisi = st.sidebar.number_input(
+            "LiSi Standard (A·s/g):",
+            min_value=0.0,
+            max_value=10000.0,
+            value=1400.0,
+            step=10.0,
+            help="Standard A·s per gram for LiSi (Lithium-Silicon)"
+        )
+        
+        std_fes2 = st.sidebar.number_input(
+            "FeS₂ Standard (A·s/g):",
+            min_value=0.0,
+            max_value=10000.0,
+            value=600.0,
+            step=10.0,
+            help="Standard A·s per gram for FeS₂ (Iron Disulfide)"
+        )
     else:
         std_max_onload_voltage = None
         std_max_oc_voltage = None
@@ -2490,6 +2552,8 @@ if data_mode == "Upload Files":
         std_duration = None
         std_activation_time_ms = None
         std_duration_sec = None
+        std_lisi = None
+        std_fes2 = None
     
     st.sidebar.markdown("---")
     
@@ -3354,6 +3418,7 @@ if len(dataframes) > 0:
                         use_standards, std_max_onload_voltage,
                         std_max_oc_voltage, std_activation_time, std_duration,
                         std_activation_time_ms, std_duration_sec,
+                        std_lisi, std_fes2,
                         extended_metadata_list_for_pdf,
                         analytics_list_for_pdf,
                         correlations_for_pdf,
