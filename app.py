@@ -82,6 +82,16 @@ def safe_scalar(value):
         return value.iloc[0] if len(value) > 0 else None
     return value
 
+def get_file_id(uploaded_file):
+    """Safely get a unique identifier for an uploaded file across Streamlit versions"""
+    if uploaded_file is None:
+        return None
+    if hasattr(uploaded_file, "file_id"):
+        return uploaded_file.file_id
+    if hasattr(uploaded_file, "id"):
+        return uploaded_file.id
+    return f"{uploaded_file.name}_{uploaded_file.size}"
+
 def extract_metadata_from_file(uploaded_file):
     """
     Extract ALL metadata from Excel header: basic info, standard params, and extended build data.
@@ -2490,7 +2500,7 @@ if data_mode == "Upload Files":
             )
             
             # Detect file change by comparing file IDs
-            current_file_id = multi_build_file.file_id if multi_build_file else None
+            current_file_id = get_file_id(multi_build_file)
             previous_file_id = st.session_state.get('multi_build_file_id')
             file_changed = current_file_id is not None and current_file_id != previous_file_id
             
@@ -2665,7 +2675,9 @@ if data_mode == "Upload Files":
                 uploaded_files.append(uploaded_file)
                 
                 # Process uploaded file and extract metadata BEFORE form widgets are rendered
-                if uploaded_file and f'file_processed_{i}_{uploaded_file.file_id}' not in st.session_state:
+                file_id = get_file_id(uploaded_file)
+                processed_key = f'file_processed_{i}_{file_id}'
+                if uploaded_file and processed_key not in st.session_state:
                     try:
                         df, metadata, standard_params, file_extended_metadata = load_data(uploaded_file)
                         if df is not None and file_extended_metadata and any(v is not None for v in file_extended_metadata.values()):
@@ -2686,7 +2698,7 @@ if data_mode == "Upload Files":
                             st.session_state[f'cells_series_{i}'] = int(cells_in_series)
                             st.session_state[f'stacks_parallel_{i}'] = int(stacks_in_parallel)
                             st.session_state[f'calorific_value_{i}'] = float(calorific)
-                            st.session_state[f'file_processed_{i}_{uploaded_file.file_id}'] = True
+                            st.session_state[processed_key] = True
                             st.info(f"✅ Metadata extracted from Excel file for Build {i+1}")
                     except Exception as e:
                         st.error(f"Error processing file for Build {i+1}: {str(e)}")
