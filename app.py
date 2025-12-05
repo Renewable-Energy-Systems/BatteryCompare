@@ -2520,10 +2520,7 @@ if data_mode == "Upload Files":
                             st.session_state[f'stacks_parallel_{i}'] = int(ext_meta.get('stacks_in_parallel', 1) or 1)
                             st.session_state[f'calorific_value_{i}'] = float(ext_meta.get('calorific_value_per_gram', 0) or 0)
                     
-                    # Rerun to update UI immediately after processing
-                    st.rerun()
-            
-            # Show success message after rerun
+            # Show success message when builds are detected
             if 'multi_build_success' in st.session_state:
                 st.sidebar.success(f"✅ Detected {st.session_state['multi_build_success']} builds in file!")
             
