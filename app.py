@@ -368,10 +368,6 @@ def load_multi_build_file(uploaded_file):
         # Sort by column position
         build_sections.sort(key=lambda x: x['start_col'])
         
-        # Debug: Log detected build sections
-        print(f"[DEBUG] Detected {len(build_sections)} build sections:")
-        for s in build_sections:
-            print(f"  Build {s.get('build_id', '?')}: start_col={s['start_col']}")
         
         # Now extract data for each build
         results = []
@@ -416,8 +412,9 @@ def load_multi_build_file(uploaded_file):
             }
             
             # Find the data header row (Time, Voltage, Current)
+            # Search up to 30 rows to find the Time header
             data_start_row = 0
-            for row_idx in range(min(20, len(raw_df))):
+            for row_idx in range(min(30, len(raw_df))):
                 row = raw_df.iloc[row_idx, start_col:end_col]
                 row_strings = [str(val).lower() if pd.notna(val) else "" for val in row]
                 
@@ -507,13 +504,7 @@ def load_multi_build_file(uploaded_file):
                 # Only add if we have actual data
                 if len(build_data) > 0:
                     results.append((build_data, metadata, standard_params, extended_metadata))
-                    print(f"  [DEBUG] Build {build_id} added: {len(build_data)} rows")
-                else:
-                    print(f"  [DEBUG] Build {build_id} SKIPPED: no data rows")
-            else:
-                print(f"  [DEBUG] Build {build_id} SKIPPED: only {len(data_cols)} data columns")
         
-        print(f"[DEBUG] Returning {len(results)} builds")
         return results
     
     except Exception as e:
