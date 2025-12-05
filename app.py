@@ -2910,9 +2910,9 @@ else:
     
     num_builds = len(dataframes)
 
-if len(dataframes) == num_builds and num_builds > 0:
+if len(dataframes) > 0:
     if data_mode == "Upload Files":
-        st.success(f"✅ All {num_builds} files loaded successfully!")
+        st.success(f"✅ All {len(dataframes)} files loaded successfully!")
     else:
         st.success(f"✅ Streaming {num_builds} build(s) with live data!")
     
