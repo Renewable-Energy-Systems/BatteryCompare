@@ -195,3 +195,16 @@ Preferred communication style: Simple, everyday language.
 - Scales vertically with more builds (no horizontal stretching)
 - Consistent layout regardless of number of builds
 - Standard values clearly visible as baseline row
+
+### LiSi and FeS₂ Standard Columns in PDF (December 2025) ✅
+**Core Feature**: Added LiSi Standard and FeS₂ Standard columns to the "Advanced Performance Metrics" PDF table.
+
+**Implementation**:
+- Added input fields in sidebar: "LiSi Std (A·s/g)" (default 1400) and "FeS₂ Std (A·s/g)" (default 600)
+- Added `std_lisi` and `std_fes2` parameters to `generate_pdf_report()` function
+- Updated Advanced Performance Metrics table with new column order:
+  - Build | Total Ampere-Seconds (A·s) | LiSi Standard (A·s/g) | A·s per gm of LiSi | FeS₂ Standard (A·s/g) | A·s per gm of FeS₂
+- Standard columns show "-" when standards are not enabled
+- Adaptive column widths adjust for additional columns
+
+**Verification**: Architect review confirmed correct column ordering and parameter passing.
