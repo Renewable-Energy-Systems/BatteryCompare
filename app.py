@@ -4071,6 +4071,32 @@ if len(dataframes) > 0:
                 st.dataframe(df.head(20), use_container_width=True)
                 
                 st.markdown(f"**Data Shape:** {df.shape[0]} rows × {df.shape[1]} columns")
+                
+                # Show temperature data if available
+                temp_data_key = f'temperature_data_{idx}'
+                if temp_data_key in st.session_state:
+                    temp_df = st.session_state[temp_data_key]
+                    if temp_df is not None and len(temp_df) > 0:
+                        st.markdown("---")
+                        st.markdown("**🌡️ Temperature Data (T1=Top, T2=Middle, T3=Bottom of battery):**")
+                        
+                        # Show counts for each temperature sensor
+                        t1_count = temp_df['t1'].notna().sum()
+                        t2_count = temp_df['t2'].notna().sum()
+                        t3_count = temp_df['t3'].notna().sum()
+                        
+                        temp_cols = st.columns(3)
+                        with temp_cols[0]:
+                            st.metric("T1 (Top)", f"{t1_count} readings" if t1_count > 0 else "No data")
+                        with temp_cols[1]:
+                            st.metric("T2 (Middle)", f"{t2_count} readings" if t2_count > 0 else "No data")
+                        with temp_cols[2]:
+                            st.metric("T3 (Bottom)", f"{t3_count} readings" if t3_count > 0 else "No data")
+                        
+                        # Display temperature dataframe
+                        display_temp_df = temp_df.copy()
+                        display_temp_df.columns = ['Time (sec)', 'T1 (°C)', 'T2 (°C)', 'T3 (°C)']
+                        st.dataframe(display_temp_df, use_container_width=True)
     
     with tab6:
         st.header("Temperature-Based Performance Comparison")
