@@ -13,10 +13,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 import json
 from reportlab.lib import colors as rl_colors
 from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
@@ -1065,7 +1068,8 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                         extended_metadata_list=None,
                         analytics_list=None,
                         correlations=None,
-                        duration_correlations=None):
+                        duration_correlations=None,
+                        discharge_data_list=None):
     """Generate a comprehensive PDF report with all metrics, analytics, and correlations"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
@@ -1488,6 +1492,106 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             ]))
             story.append(curve_table)
             story.append(Spacer(1, 0.2*inch))
+    
+    # Combined Curve Analysis Graph (Voltage and Current vs Time)
+    if discharge_data_list and len(discharge_data_list) > 0:
+        story.append(PageBreak())
+        story.append(Paragraph("Combined Curve Analysis", heading_style))
+        story.append(Spacer(1, 0.1*inch))
+        story.append(Paragraph("<i>Voltage (left axis) and Current (right axis) vs Time for all builds</i>", styles['Normal']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        try:
+            # Create figure with dual Y-axes
+            fig, ax1 = plt.subplots(figsize=(8, 5))
+            ax2 = ax1.twinx()
+            
+            # Color palette for builds
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                      '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+            
+            has_voltage_data = False
+            has_current_data = False
+            
+            for idx, data_info in enumerate(discharge_data_list):
+                df = data_info.get('df')
+                time_col = data_info.get('time_col')
+                voltage_col = data_info.get('voltage_col')
+                current_col = data_info.get('current_col')
+                build_name = data_info.get('build_name', f'Build {idx+1}')
+                temp = data_info.get('temperature', '')
+                
+                if df is None or time_col is None:
+                    continue
+                
+                color = colors[idx % len(colors)]
+                label_suffix = f" ({temp})" if temp else ""
+                
+                # Get time data in seconds
+                time_data = df[time_col].values
+                if pd.api.types.is_numeric_dtype(df[time_col]):
+                    time_seconds = time_data
+                else:
+                    try:
+                        time_seconds = pd.to_numeric(df[time_col], errors='coerce').values
+                    except:
+                        continue
+                
+                # Plot Voltage (solid line, left axis)
+                if voltage_col and voltage_col in df.columns:
+                    voltage_data = pd.to_numeric(df[voltage_col], errors='coerce').values
+                    ax1.plot(time_seconds, voltage_data, color=color, linestyle='-', 
+                             linewidth=1.5, label=f'{build_name} Voltage{label_suffix}')
+                    has_voltage_data = True
+                
+                # Plot Current (dashed line, right axis)
+                if current_col and current_col in df.columns:
+                    current_data = pd.to_numeric(df[current_col], errors='coerce').values
+                    ax2.plot(time_seconds, current_data, color=color, linestyle='--', 
+                             linewidth=1.5, label=f'{build_name} Current{label_suffix}')
+                    has_current_data = True
+            
+            # Configure axes
+            ax1.set_xlabel('Time (seconds)', fontsize=10)
+            ax1.set_ylabel('Voltage (V)', fontsize=10, color='#1f77b4')
+            ax1.tick_params(axis='y', labelcolor='#1f77b4')
+            ax1.grid(True, alpha=0.3)
+            
+            ax2.set_ylabel('Current (A)', fontsize=10, color='#d62728')
+            ax2.tick_params(axis='y', labelcolor='#d62728')
+            
+            # Combine legends
+            lines1, labels1 = ax1.get_legend_handles_labels()
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            if lines1 or lines2:
+                ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', 
+                          fontsize=7, framealpha=0.9)
+            
+            plt.title('Discharge Curves: Voltage & Current vs Time', fontsize=12)
+            plt.tight_layout()
+            
+            # Save to buffer
+            img_buffer = io.BytesIO()
+            plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+            img_buffer.seek(0)
+            plt.close(fig)
+            
+            # Add image to PDF
+            img = Image(img_buffer, width=6.5*inch, height=4*inch)
+            story.append(img)
+            story.append(Spacer(1, 0.2*inch))
+            
+            # Legend explanation
+            legend_text = """
+            <b>Legend:</b><br/>
+            • Solid lines = Voltage (left Y-axis)<br/>
+            • Dashed lines = Current (right Y-axis)<br/>
+            • Each color represents a different build
+            """
+            story.append(Paragraph(legend_text, styles['Normal']))
+            
+        except Exception as e:
+            story.append(Paragraph(f"<i>Could not generate curve graph: {str(e)}</i>", styles['Normal']))
     
     doc.build(story)
     buffer.seek(0)
@@ -3267,9 +3371,10 @@ if len(dataframes) > 0:
                     st.error(f"Report generation error: {str(e)}")
             with export_col4:
                 try:
-                    # Prepare analytics and extended metadata for PDF
+                    # Prepare analytics, extended metadata, and discharge data for PDF
                     analytics_list_for_pdf = []
                     extended_metadata_list_for_pdf = []
+                    discharge_data_list_for_pdf = []
                     
                     for idx, (df, name) in enumerate(zip(dataframes, build_names)):
                         time_col, voltage_col, current_col, capacity_col = detect_columns(df)
@@ -3281,6 +3386,17 @@ if len(dataframes) > 0:
                         # Get extended metadata for this build
                         ext_meta = st.session_state.get('build_metadata_extended', {}).get(idx, {})
                         extended_metadata_list_for_pdf.append(ext_meta)
+                        
+                        # Prepare discharge data for PDF chart
+                        meta = metadata_list[idx] if idx < len(metadata_list) else {}
+                        discharge_data_list_for_pdf.append({
+                            'df': df,
+                            'time_col': time_col,
+                            'voltage_col': voltage_col,
+                            'current_col': current_col,
+                            'build_name': name,
+                            'temperature': meta.get('temperature', '')
+                        })
                     
                     # Calculate correlations if we have enough data
                     correlations_for_pdf = None
@@ -3300,7 +3416,8 @@ if len(dataframes) > 0:
                         extended_metadata_list_for_pdf,
                         analytics_list_for_pdf,
                         correlations_for_pdf,
-                        duration_correlations_for_pdf
+                        duration_correlations_for_pdf,
+                        discharge_data_list_for_pdf
                     )
                     st.download_button(
                         label="📕 PDF",
