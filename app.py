@@ -1507,6 +1507,7 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                 header_row.append(Paragraph('A·s per gm of LiSi', table_header_style))
             if has_fes2:
                 header_row.append(Paragraph('A·s per gm of FeS₂', table_header_style))
+            header_row.append(Paragraph('A·s per Calorie', table_header_style))
             adv_data = [header_row]
             
             # Standard row at top (shows UI standard values)
@@ -1517,16 +1518,19 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                 std_row.append(Paragraph(f"{std_lisi}" if std_lisi is not None else "—", table_cell_style))
             if has_fes2:
                 std_row.append(Paragraph(f"{std_fes2}" if std_fes2 is not None else "—", table_cell_style))
+            std_row.append(Paragraph("—", table_cell_style))
             adv_data.append(std_row)
             
             # Build rows
-            for build_name in metrics_df.index:
+            for idx, build_name in enumerate(metrics_df.index):
                 row = [Paragraph(str(build_name), table_cell_left_style)]
                 
                 # Total Ampere-Seconds
+                total_as_value = None
                 if has_total_as:
                     value = metrics_df.loc[build_name, 'Total Ampere-Seconds (A·s)']
                     if pd.notna(value):
+                        total_as_value = value
                         row.append(Paragraph(f"{value:.4f}", table_cell_style))
                     else:
                         row.append(Paragraph("N/A", table_cell_style))
@@ -1547,11 +1551,27 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                     else:
                         row.append(Paragraph("N/A", table_cell_style))
                 
+                # A·s per Calorie = Total Ampere-Seconds / Total Calories
+                as_per_cal_str = "N/A"
+                if total_as_value is not None and extended_metadata_list and idx < len(extended_metadata_list):
+                    ext_meta = extended_metadata_list[idx]
+                    if ext_meta:
+                        heat_pellet = ext_meta.get('heat_pellet_weight', 0)
+                        cells = ext_meta.get('cells_in_series', 0)
+                        stacks = ext_meta.get('stacks_in_parallel', 0)
+                        cal_per_gram = ext_meta.get('calorific_value_per_gram', 260)
+                        if heat_pellet and cells and stacks:
+                            total_calories = heat_pellet * cells * stacks * cal_per_gram
+                            if total_calories > 0:
+                                as_per_cal = total_as_value / total_calories
+                                as_per_cal_str = f"{as_per_cal:.6f}"
+                row.append(Paragraph(as_per_cal_str, table_cell_style))
+                
                 adv_data.append(row)
             
             # Column widths for simplified table
             num_cols = len(adv_data[0])
-            col_widths = [1.8*inch] + [1.6*inch] * (num_cols - 1)
+            col_widths = [1.5*inch] + [1.4*inch] * (num_cols - 1)
             
             adv_table = Table(adv_data, colWidths=col_widths)
             adv_table.setStyle(TableStyle([
