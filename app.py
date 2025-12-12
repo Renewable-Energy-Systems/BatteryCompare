@@ -1187,7 +1187,8 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                         correlations=None,
                         duration_correlations=None,
                         discharge_data_list=None,
-                        temperature_data_list=None):
+                        temperature_data_list=None,
+                        target_duration_sec=None):
     """Generate a comprehensive PDF report with all metrics, analytics, and correlations"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
@@ -1789,6 +1790,80 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             
         except Exception as e:
             story.append(Paragraph(f"<i>Could not generate temperature curve graph: {str(e)}</i>", styles['Normal']))
+        
+        # Temperature Data Table based on time intervals
+        # Time intervals = (Duration * 1.5) / 10
+        if target_duration_sec and target_duration_sec > 0:
+            time_interval = (target_duration_sec * 1.5) / 10
+            time_points = [int(i * time_interval) for i in range(11)]  # 0 to 10 intervals
+            
+            story.append(Spacer(1, 0.2*inch))
+            story.append(Paragraph("Temperature Data at Time Intervals", heading_style))
+            story.append(Paragraph(f"Time interval: {time_interval:.1f} sec (based on Duration × 1.5 / 10)", styles['Normal']))
+            story.append(Spacer(1, 0.1*inch))
+            
+            # Create table for each build
+            for idx, temp_df in enumerate(temperature_data_list):
+                if temp_df is not None and len(temp_df) > 0:
+                    build_name = build_names[idx] if idx < len(build_names) else f"Build {idx+1}"
+                    
+                    story.append(Paragraph(f"<b>{build_name}</b>", styles['Normal']))
+                    story.append(Spacer(1, 0.05*inch))
+                    
+                    # Header row
+                    temp_table_data = [[
+                        Paragraph('Time (s)', table_header_style),
+                        Paragraph('T1 (°C)', table_header_style),
+                        Paragraph('T2 (°C)', table_header_style),
+                        Paragraph('T3 (°C)', table_header_style)
+                    ]]
+                    
+                    # Get time and temperature values
+                    time_vals = pd.to_numeric(temp_df.get('time', pd.Series()), errors='coerce')
+                    t1_vals = pd.to_numeric(temp_df.get('t1', pd.Series()), errors='coerce')
+                    t2_vals = pd.to_numeric(temp_df.get('t2', pd.Series()), errors='coerce')
+                    t3_vals = pd.to_numeric(temp_df.get('t3', pd.Series()), errors='coerce')
+                    
+                    # For each time point, find the closest value
+                    for tp in time_points:
+                        # Find the row with time closest to tp
+                        if len(time_vals) > 0 and time_vals.notna().any():
+                            time_diff = (time_vals - tp).abs()
+                            closest_idx = time_diff.idxmin()
+                            
+                            # Only use if within 5 seconds of target time
+                            if time_diff.loc[closest_idx] <= 5:
+                                t1_val = t1_vals.loc[closest_idx] if pd.notna(t1_vals.loc[closest_idx]) else "-"
+                                t2_val = t2_vals.loc[closest_idx] if pd.notna(t2_vals.loc[closest_idx]) else "-"
+                                t3_val = t3_vals.loc[closest_idx] if pd.notna(t3_vals.loc[closest_idx]) else "-"
+                                
+                                t1_str = f"{t1_val:.1f}" if isinstance(t1_val, (int, float)) else "-"
+                                t2_str = f"{t2_val:.1f}" if isinstance(t2_val, (int, float)) else "-"
+                                t3_str = f"{t3_val:.1f}" if isinstance(t3_val, (int, float)) else "-"
+                            else:
+                                t1_str = t2_str = t3_str = "-"
+                        else:
+                            t1_str = t2_str = t3_str = "-"
+                        
+                        temp_table_data.append([
+                            Paragraph(str(tp), table_cell_style),
+                            Paragraph(t1_str, table_cell_style),
+                            Paragraph(t2_str, table_cell_style),
+                            Paragraph(t3_str, table_cell_style)
+                        ])
+                    
+                    temp_table = Table(temp_table_data, colWidths=[1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch])
+                    temp_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#17a2b8')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+                        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+                        ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#e8f4f8')),
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('TOPPADDING', (0, 0), (-1, -1), 4),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                    ]))
+                    story.append(temp_table)
+                    story.append(Spacer(1, 0.15*inch))
     
     doc.build(story)
     buffer.seek(0)
@@ -3653,7 +3728,8 @@ if len(dataframes) > 0:
                         correlations_for_pdf,
                         duration_correlations_for_pdf,
                         discharge_data_list_for_pdf,
-                        temperature_data_list_for_pdf
+                        temperature_data_list_for_pdf,
+                        target_duration_sec
                     )
                     st.download_button(
                         label="📕 PDF",
