@@ -1370,18 +1370,27 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             story.append(Paragraph("Advanced Performance Metrics", heading_style))
             story.append(Spacer(1, 0.1*inch))
             
-            # Build header row with standard columns
+            # Simplified header row (removed Standard columns)
             header_row = [Paragraph('Build', table_header_style)]
             if has_total_as:
                 header_row.append(Paragraph('Total Ampere-Seconds (A·s)', table_header_style))
             if has_lisi:
-                header_row.append(Paragraph('LiSi Standard (A·s/g)', table_header_style))
                 header_row.append(Paragraph('A·s per gm of LiSi', table_header_style))
             if has_fes2:
-                header_row.append(Paragraph('FeS₂ Standard (A·s/g)', table_header_style))
                 header_row.append(Paragraph('A·s per gm of FeS₂', table_header_style))
             adv_data = [header_row]
             
+            # Standard row at top (baseline)
+            std_row = [Paragraph('Standard', table_cell_left_style)]
+            if has_total_as:
+                std_row.append(Paragraph("—", table_cell_style))
+            if has_lisi:
+                std_row.append(Paragraph("—", table_cell_style))
+            if has_fes2:
+                std_row.append(Paragraph("—", table_cell_style))
+            adv_data.append(std_row)
+            
+            # Build rows
             for build_name in metrics_df.index:
                 row = [Paragraph(str(build_name), table_cell_left_style)]
                 
@@ -1393,28 +1402,16 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                     else:
                         row.append(Paragraph("N/A", table_cell_style))
                 
-                # LiSi Standard and A·s per gm of LiSi
+                # A·s per gm of LiSi
                 if has_lisi:
-                    # LiSi Standard column
-                    if std_lisi is not None:
-                        row.append(Paragraph(f"{std_lisi}", table_cell_style))
-                    else:
-                        row.append(Paragraph("-", table_cell_style))
-                    # A·s per gm of LiSi
                     value = metrics_df.loc[build_name, 'A·s per gm of LiSi']
                     if pd.notna(value):
                         row.append(Paragraph(f"{value:.4f}", table_cell_style))
                     else:
                         row.append(Paragraph("N/A", table_cell_style))
                 
-                # FeS₂ Standard and A·s per gm of FeS₂
+                # A·s per gm of FeS₂
                 if has_fes2:
-                    # FeS₂ Standard column
-                    if std_fes2 is not None:
-                        row.append(Paragraph(f"{std_fes2}", table_cell_style))
-                    else:
-                        row.append(Paragraph("-", table_cell_style))
-                    # A·s per gm of FeS₂
                     value = metrics_df.loc[build_name, 'A·s per gm of FeS2']
                     if pd.notna(value):
                         row.append(Paragraph(f"{value:.4f}", table_cell_style))
@@ -1423,18 +1420,17 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                 
                 adv_data.append(row)
             
-            # Adjust column widths based on number of columns
+            # Column widths for simplified table
             num_cols = len(adv_data[0])
-            col_widths = [1.5*inch] + [1.1*inch] * (num_cols - 1)
-            if sum(col_widths) > 7.5*inch:
-                col_widths = [1.3*inch] + [0.95*inch] * (num_cols - 1)
+            col_widths = [1.8*inch] + [1.6*inch] * (num_cols - 1)
             
             adv_table = Table(adv_data, colWidths=col_widths)
             adv_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#9467bd')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
                 ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
-                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lavender),
+                ('BACKGROUND', (0, 1), (-1, 1), rl_colors.HexColor('#ffe6cc')),  # Standard row highlighted
+                ('BACKGROUND', (0, 2), (-1, -1), rl_colors.lavender),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('TOPPADDING', (0, 0), (-1, -1), 6),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
