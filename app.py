@@ -1186,7 +1186,8 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                         analytics_list=None,
                         correlations=None,
                         duration_correlations=None,
-                        discharge_data_list=None):
+                        discharge_data_list=None,
+                        temperature_data_list=None):
     """Generate a comprehensive PDF report with all metrics, analytics, and correlations"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
@@ -1726,6 +1727,76 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             
         except Exception as e:
             story.append(Paragraph(f"<i>Could not generate curve graph: {str(e)}</i>", styles['Normal']))
+    
+    # Temperature Differential Analysis Table
+    if temperature_data_list and any(t is not None and len(t) > 0 for t in temperature_data_list):
+        story.append(Spacer(1, 0.3*inch))
+        story.append(Paragraph("Temperature Differential Analysis", heading_style))
+        story.append(Paragraph("Temperature differentials calculated from sensor data (T1=Top, T2=Middle, T3=Bottom)", styles['Normal']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Calculate differentials for each build
+        temp_diff_data = [[
+            Paragraph('Build', table_header_style),
+            Paragraph('M–T (°C)', table_header_style),
+            Paragraph('M–B (°C)', table_header_style),
+            Paragraph('B–T (°C)', table_header_style)
+        ]]
+        
+        for idx, temp_df in enumerate(temperature_data_list):
+            build_name = build_names[idx] if idx < len(build_names) else f"Build {idx+1}"
+            
+            if temp_df is not None and len(temp_df) > 0:
+                # Filter data for 0-600 seconds (or whatever is available)
+                if 'time' in temp_df.columns:
+                    filtered_df = temp_df[temp_df['time'] <= 600].copy()
+                else:
+                    filtered_df = temp_df.copy()
+                
+                # Calculate average differentials where data exists
+                t1_vals = pd.to_numeric(filtered_df.get('t1', pd.Series()), errors='coerce')
+                t2_vals = pd.to_numeric(filtered_df.get('t2', pd.Series()), errors='coerce')
+                t3_vals = pd.to_numeric(filtered_df.get('t3', pd.Series()), errors='coerce')
+                
+                # M-T = T2 - T1 (Middle minus Top)
+                mt_diff = (t2_vals - t1_vals).dropna()
+                mt_avg = f"{mt_diff.mean():.2f}" if len(mt_diff) > 0 else "-"
+                
+                # M-B = T2 - T3 (Middle minus Bottom)
+                mb_diff = (t2_vals - t3_vals).dropna()
+                mb_avg = f"{mb_diff.mean():.2f}" if len(mb_diff) > 0 else "-"
+                
+                # B-T = T3 - T1 (Bottom minus Top)
+                bt_diff = (t3_vals - t1_vals).dropna()
+                bt_avg = f"{bt_diff.mean():.2f}" if len(bt_diff) > 0 else "-"
+                
+                temp_diff_data.append([
+                    Paragraph(str(build_name), table_cell_left_style),
+                    Paragraph(mt_avg, table_cell_style),
+                    Paragraph(mb_avg, table_cell_style),
+                    Paragraph(bt_avg, table_cell_style)
+                ])
+            else:
+                temp_diff_data.append([
+                    Paragraph(str(build_name), table_cell_left_style),
+                    Paragraph("-", table_cell_style),
+                    Paragraph("-", table_cell_style),
+                    Paragraph("-", table_cell_style)
+                ])
+        
+        temp_diff_table = Table(temp_diff_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+        temp_diff_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#17a2b8')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#e8f4f8')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(temp_diff_table)
+        story.append(Spacer(1, 0.1*inch))
+        story.append(Paragraph("<i>Note: Values are average differentials from 0-600 seconds (or available data range)</i>", styles['Normal']))
     
     doc.build(story)
     buffer.seek(0)
@@ -3570,6 +3641,13 @@ if len(dataframes) > 0:
                         correlations_for_pdf = calculate_correlation_analysis(all_build_metrics, analytics_list_for_pdf)
                         duration_correlations_for_pdf = calculate_duration_correlations(all_build_metrics, extended_metadata_list_for_pdf)
                     
+                    # Collect temperature data for PDF
+                    temperature_data_list_for_pdf = []
+                    for idx in range(len(dataframes)):
+                        temp_data_key = f'temperature_data_{idx}'
+                        temp_df = st.session_state.get(temp_data_key, None)
+                        temperature_data_list_for_pdf.append(temp_df)
+                    
                     # Generate PDF report
                     pdf_data = generate_pdf_report(
                         metrics_df, build_names, metadata_list,
@@ -3582,7 +3660,8 @@ if len(dataframes) > 0:
                         analytics_list_for_pdf,
                         correlations_for_pdf,
                         duration_correlations_for_pdf,
-                        discharge_data_list_for_pdf
+                        discharge_data_list_for_pdf,
+                        temperature_data_list_for_pdf
                     )
                     st.download_button(
                         label="📕 PDF",
