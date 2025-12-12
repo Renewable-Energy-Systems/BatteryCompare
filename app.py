@@ -1875,7 +1875,10 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                         Paragraph('Time (s)', table_header_style),
                         Paragraph('T1 (°C)', table_header_style),
                         Paragraph('T2 (°C)', table_header_style),
-                        Paragraph('T3 (°C)', table_header_style)
+                        Paragraph('T3 (°C)', table_header_style),
+                        Paragraph('T1-T2 (°C)', table_header_style),
+                        Paragraph('T3-T2 (°C)', table_header_style),
+                        Paragraph('T1-T3 (°C)', table_header_style)
                     ]]
                     
                     # Get time and temperature values
@@ -1935,14 +1938,29 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                                     closest_idx = np.abs(t3_time - tp).argmin()
                                     t3_str = f"{t3_data[closest_idx]:.1f}"
                         
+                        # Calculate differences
+                        t1_t2_str = "-"
+                        t3_t2_str = "-"
+                        t1_t3_str = "-"
+                        
+                        if t1_str != "-" and t2_str != "-":
+                            t1_t2_str = f"{float(t1_str) - float(t2_str):.1f}"
+                        if t3_str != "-" and t2_str != "-":
+                            t3_t2_str = f"{float(t3_str) - float(t2_str):.1f}"
+                        if t1_str != "-" and t3_str != "-":
+                            t1_t3_str = f"{float(t1_str) - float(t3_str):.1f}"
+                        
                         temp_table_data.append([
                             Paragraph(str(tp), table_cell_style),
                             Paragraph(t1_str, table_cell_style),
                             Paragraph(t2_str, table_cell_style),
-                            Paragraph(t3_str, table_cell_style)
+                            Paragraph(t3_str, table_cell_style),
+                            Paragraph(t1_t2_str, table_cell_style),
+                            Paragraph(t3_t2_str, table_cell_style),
+                            Paragraph(t1_t3_str, table_cell_style)
                         ])
                     
-                    temp_table = Table(temp_table_data, colWidths=[1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch])
+                    temp_table = Table(temp_table_data, colWidths=[0.8*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.9*inch])
                     temp_table.setStyle(TableStyle([
                         ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#17a2b8')),
                         ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
