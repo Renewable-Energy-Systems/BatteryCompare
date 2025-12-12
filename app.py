@@ -1561,57 +1561,6 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             story.append(adv_table)
             story.append(Spacer(1, 0.2*inch))
     
-    # Discharge Curve Analysis Section - Combined table for all builds
-    if analytics_list and any(analytics for analytics in analytics_list):
-        story.append(PageBreak())
-        story.append(Paragraph("Discharge Curve Analysis", heading_style))
-        story.append(Spacer(1, 0.1*inch))
-        
-        header_row = [Paragraph('Metric', table_header_style)]
-        for build_name in build_names:
-            header_row.append(Paragraph(str(build_name), table_header_style))
-        
-        curve_data = [header_row]
-        
-        curve_metrics = [
-            ('ΔV/ΔT Mean (V/s)', 'Mean ΔV/ΔT (V/s)', lambda v: f"{v:.6f}"),
-            ('ΔV/ΔT Std Dev (V/s)', 'Std Dev ΔV/ΔT (V/s)', lambda v: f"{v:.6f}"),
-            ('ΔV/ΔT Max (V/s)', 'Max |ΔV/ΔT| (V/s)', lambda v: f"{v:.6f}"),
-            ('Discharge Slope Variability (%)', 'Slope Variability (%)', lambda v: f"{v:.2f}"),
-            ('Curve Stability Assessment', 'Stability', lambda v: str(v)),
-        ]
-        
-        for key, label, formatter in curve_metrics:
-            has_any_value = any(
-                analytics and analytics.get(key) is not None 
-                for analytics in analytics_list
-            )
-            if has_any_value:
-                row = [Paragraph(label, table_cell_left_style)]
-                for analytics in analytics_list:
-                    val = analytics.get(key) if analytics else None
-                    row.append(Paragraph(formatter(val) if val is not None else "-", table_cell_style))
-                curve_data.append(row)
-        
-        if len(curve_data) > 1:
-            num_builds = len(build_names)
-            col_widths = [2*inch] + [1.2*inch] * num_builds
-            if sum(col_widths) > 7*inch:
-                col_widths = [1.5*inch] + [0.9*inch] * num_builds
-            
-            curve_table = Table(curve_data, colWidths=col_widths)
-            curve_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#17becf')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
-                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#e6f7ff')),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 6),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ]))
-            story.append(curve_table)
-            story.append(Spacer(1, 0.2*inch))
-    
     # Combined Curve Analysis Graph (Voltage and Current vs Time)
     if discharge_data_list and len(discharge_data_list) > 0:
         story.append(PageBreak())
