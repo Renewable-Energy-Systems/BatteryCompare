@@ -1380,14 +1380,14 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                 header_row.append(Paragraph('A·s per gm of FeS₂', table_header_style))
             adv_data = [header_row]
             
-            # Standard row at top (baseline)
+            # Standard row at top (shows UI standard values)
             std_row = [Paragraph('Standard', table_cell_left_style)]
             if has_total_as:
                 std_row.append(Paragraph("—", table_cell_style))
             if has_lisi:
-                std_row.append(Paragraph("—", table_cell_style))
+                std_row.append(Paragraph(f"{std_lisi}" if std_lisi is not None else "—", table_cell_style))
             if has_fes2:
-                std_row.append(Paragraph("—", table_cell_style))
+                std_row.append(Paragraph(f"{std_fes2}" if std_fes2 is not None else "—", table_cell_style))
             adv_data.append(std_row)
             
             # Build rows
