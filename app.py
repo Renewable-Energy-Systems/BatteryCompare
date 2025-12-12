@@ -1793,9 +1793,12 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         
         # Temperature Data Table based on time intervals
         # Time intervals = (Duration * 1.5) / 10
-        if target_duration_sec and target_duration_sec > 0:
-            time_interval = (target_duration_sec * 1.5) / 10
-            time_points = [int(i * time_interval) for i in range(11)]  # 0 to 10 intervals
+        # Use target_duration_sec if set, otherwise use std_duration_sec, or default to 600
+        duration_for_table = target_duration_sec if target_duration_sec and target_duration_sec > 0 else (std_duration_sec if std_duration_sec and std_duration_sec > 0 else 600)
+        time_interval = (duration_for_table * 1.5) / 10
+        time_points = [int(i * time_interval) for i in range(11)]  # 0 to 10 intervals
+        
+        if True:  # Always show the table when temperature data exists
             
             story.append(Spacer(1, 0.2*inch))
             story.append(Paragraph("Temperature Data at Time Intervals", heading_style))
