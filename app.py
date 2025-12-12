@@ -1205,32 +1205,6 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
     
     if use_standards and any([std_max_onload_voltage, std_max_oc_voltage, std_activation_time_ms, std_duration_sec]):
         story.append(PageBreak())
-        story.append(Paragraph("Standard Performance Benchmarks", heading_style))
-        
-        std_data = [[Paragraph('Metric', table_header_style), Paragraph('Standard Value', table_header_style)]]
-        if std_max_onload_voltage:
-            std_data.append([Paragraph('Max On-Load Voltage', table_cell_left_style), Paragraph(f"{std_max_onload_voltage} V", table_cell_style)])
-        if std_max_oc_voltage:
-            std_data.append([Paragraph('Max Open Circuit Voltage', table_cell_left_style), Paragraph(f"{std_max_oc_voltage} V", table_cell_style)])
-        if std_activation_time_ms:
-            std_activation_sec = std_activation_time_ms / 1000.0
-            std_data.append([Paragraph('Max Activation Time', table_cell_left_style), Paragraph(f"{std_activation_time_ms} ms ({std_activation_sec:.2f} s)", table_cell_style)])
-        if std_duration_sec:
-            std_data.append([Paragraph('Target Min Duration', table_cell_left_style), Paragraph(f"{std_duration_sec} s", table_cell_style)])
-        
-        std_table = Table(std_data, colWidths=[3*inch, 3*inch])
-        std_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#ff7f0e')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
-            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
-            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.lightyellow),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ]))
-        story.append(std_table)
-        story.append(Spacer(1, 0.2*inch))
-        
         story.append(Paragraph("Performance Comparison vs Standards", heading_style))
         story.append(Spacer(1, 0.1*inch))
         
