@@ -1560,6 +1560,23 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             ax2.set_ylabel('Current (A)', fontsize=10, color='#d62728')
             ax2.tick_params(axis='y', labelcolor='#d62728')
             
+            # Scale current Y-axis so max current appears in bottom half
+            # If max current is 8A, set Y-axis to 16A so current is in bottom half
+            if has_current_data:
+                current_max = 0
+                for data_info in discharge_data_list:
+                    df = data_info.get('df')
+                    current_col = data_info.get('current_col')
+                    if df is not None and current_col and current_col in df.columns:
+                        try:
+                            max_val = pd.to_numeric(df[current_col], errors='coerce').max()
+                            if pd.notna(max_val) and max_val > current_max:
+                                current_max = max_val
+                        except:
+                            pass
+                if current_max > 0:
+                    ax2.set_ylim(0, current_max * 2)
+            
             # Combine legends
             lines1, labels1 = ax1.get_legend_handles_labels()
             lines2, labels2 = ax2.get_legend_handles_labels()
