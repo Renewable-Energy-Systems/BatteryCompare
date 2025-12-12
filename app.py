@@ -1684,67 +1684,169 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
         except Exception as e:
             story.append(Paragraph(f"<i>Could not generate curve graph: {str(e)}</i>", styles['Normal']))
     
-    # Temperature Curve Plot
+    # Temperature Curve Plots - Multiple graphs
     if temperature_data_list and any(t is not None and len(t) > 0 for t in temperature_data_list):
         story.append(Spacer(1, 0.3*inch))
-        story.append(Paragraph("Temperature vs Time Curves", heading_style))
+        story.append(Paragraph("Temperature vs Time Analysis", heading_style))
         story.append(Spacer(1, 0.1*inch))
         
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+        
+        # Graph 1: T1 (Top) vs Time for all builds
         try:
-            fig, ax = plt.subplots(figsize=(8, 5))
-            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
-            
+            fig, ax = plt.subplots(figsize=(8, 4))
+            has_data = False
             for idx, temp_df in enumerate(temperature_data_list):
                 if temp_df is not None and len(temp_df) > 0:
                     build_name = build_names[idx] if idx < len(build_names) else f"Build {idx+1}"
                     color = colors[idx % len(colors)]
-                    
-                    # Get time and temperature data
                     time_vals = pd.to_numeric(temp_df.get('time', pd.Series()), errors='coerce')
-                    
-                    # Use T2 (Middle) as the primary temperature, or T1, or T3
-                    t2_vals = pd.to_numeric(temp_df.get('t2', pd.Series()), errors='coerce')
                     t1_vals = pd.to_numeric(temp_df.get('t1', pd.Series()), errors='coerce')
-                    t3_vals = pd.to_numeric(temp_df.get('t3', pd.Series()), errors='coerce')
-                    
-                    # Plot T2 (Middle) if available, otherwise T1 or T3
+                    if t1_vals.notna().any():
+                        valid_mask = time_vals.notna() & t1_vals.notna()
+                        if valid_mask.any():
+                            ax.plot(time_vals[valid_mask], t1_vals[valid_mask], 
+                                   label=f"{build_name}", color=color, linewidth=1.5)
+                            has_data = True
+            if has_data:
+                ax.set_xlabel('Time (sec)', fontsize=10)
+                ax.set_ylabel('Temperature (°C)', fontsize=10)
+                ax.set_title('T1 (Top) vs Time - All Builds', fontsize=12)
+                ax.legend(loc='best', fontsize=8)
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                t1_buffer = io.BytesIO()
+                plt.savefig(t1_buffer, format='png', dpi=150, bbox_inches='tight')
+                t1_buffer.seek(0)
+                plt.close(fig)
+                story.append(Image(t1_buffer, width=6*inch, height=3*inch))
+                story.append(Spacer(1, 0.15*inch))
+            else:
+                plt.close(fig)
+        except Exception as e:
+            story.append(Paragraph(f"<i>Could not generate T1 graph: {str(e)}</i>", styles['Normal']))
+        
+        # Graph 2: T2 (Middle) vs Time for all builds
+        try:
+            fig, ax = plt.subplots(figsize=(8, 4))
+            has_data = False
+            for idx, temp_df in enumerate(temperature_data_list):
+                if temp_df is not None and len(temp_df) > 0:
+                    build_name = build_names[idx] if idx < len(build_names) else f"Build {idx+1}"
+                    color = colors[idx % len(colors)]
+                    time_vals = pd.to_numeric(temp_df.get('time', pd.Series()), errors='coerce')
+                    t2_vals = pd.to_numeric(temp_df.get('t2', pd.Series()), errors='coerce')
                     if t2_vals.notna().any():
                         valid_mask = time_vals.notna() & t2_vals.notna()
                         if valid_mask.any():
                             ax.plot(time_vals[valid_mask], t2_vals[valid_mask], 
                                    label=f"{build_name}", color=color, linewidth=1.5)
-                    elif t1_vals.notna().any():
-                        valid_mask = time_vals.notna() & t1_vals.notna()
-                        if valid_mask.any():
-                            ax.plot(time_vals[valid_mask], t1_vals[valid_mask], 
-                                   label=f"{build_name}", color=color, linewidth=1.5)
-                    elif t3_vals.notna().any():
+                            has_data = True
+            if has_data:
+                ax.set_xlabel('Time (sec)', fontsize=10)
+                ax.set_ylabel('Temperature (°C)', fontsize=10)
+                ax.set_title('T2 (Middle) vs Time - All Builds', fontsize=12)
+                ax.legend(loc='best', fontsize=8)
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                t2_buffer = io.BytesIO()
+                plt.savefig(t2_buffer, format='png', dpi=150, bbox_inches='tight')
+                t2_buffer.seek(0)
+                plt.close(fig)
+                story.append(Image(t2_buffer, width=6*inch, height=3*inch))
+                story.append(Spacer(1, 0.15*inch))
+            else:
+                plt.close(fig)
+        except Exception as e:
+            story.append(Paragraph(f"<i>Could not generate T2 graph: {str(e)}</i>", styles['Normal']))
+        
+        # Graph 3: T3 (Bottom) vs Time for all builds
+        try:
+            fig, ax = plt.subplots(figsize=(8, 4))
+            has_data = False
+            for idx, temp_df in enumerate(temperature_data_list):
+                if temp_df is not None and len(temp_df) > 0:
+                    build_name = build_names[idx] if idx < len(build_names) else f"Build {idx+1}"
+                    color = colors[idx % len(colors)]
+                    time_vals = pd.to_numeric(temp_df.get('time', pd.Series()), errors='coerce')
+                    t3_vals = pd.to_numeric(temp_df.get('t3', pd.Series()), errors='coerce')
+                    if t3_vals.notna().any():
                         valid_mask = time_vals.notna() & t3_vals.notna()
                         if valid_mask.any():
                             ax.plot(time_vals[valid_mask], t3_vals[valid_mask], 
                                    label=f"{build_name}", color=color, linewidth=1.5)
-            
-            ax.set_xlabel('Time (sec)', fontsize=10)
-            ax.set_ylabel('Temperature (°C)', fontsize=10)
-            ax.set_title('Temperature vs Time Curves', fontsize=12)
-            ax.legend(loc='best', fontsize=8)
-            ax.grid(True, alpha=0.3)
-            
-            plt.tight_layout()
-            
-            # Save to buffer
-            temp_img_buffer = io.BytesIO()
-            plt.savefig(temp_img_buffer, format='png', dpi=150, bbox_inches='tight')
-            temp_img_buffer.seek(0)
-            plt.close(fig)
-            
-            # Add image to PDF
-            temp_img = Image(temp_img_buffer, width=6*inch, height=3.5*inch)
-            story.append(temp_img)
-            story.append(Spacer(1, 0.2*inch))
-            
+                            has_data = True
+            if has_data:
+                ax.set_xlabel('Time (sec)', fontsize=10)
+                ax.set_ylabel('Temperature (°C)', fontsize=10)
+                ax.set_title('T3 (Bottom) vs Time - All Builds', fontsize=12)
+                ax.legend(loc='best', fontsize=8)
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                t3_buffer = io.BytesIO()
+                plt.savefig(t3_buffer, format='png', dpi=150, bbox_inches='tight')
+                t3_buffer.seek(0)
+                plt.close(fig)
+                story.append(Image(t3_buffer, width=6*inch, height=3*inch))
+                story.append(Spacer(1, 0.15*inch))
+            else:
+                plt.close(fig)
         except Exception as e:
-            story.append(Paragraph(f"<i>Could not generate temperature curve graph: {str(e)}</i>", styles['Normal']))
+            story.append(Paragraph(f"<i>Could not generate T3 graph: {str(e)}</i>", styles['Normal']))
+        
+        # Graph 4: Per-build graphs showing T1, T2, T3 together
+        story.append(Spacer(1, 0.2*inch))
+        story.append(Paragraph("Temperature Profiles per Build (T1, T2, T3)", heading_style))
+        story.append(Spacer(1, 0.1*inch))
+        
+        for idx, temp_df in enumerate(temperature_data_list):
+            if temp_df is not None and len(temp_df) > 0:
+                build_name = build_names[idx] if idx < len(build_names) else f"Build {idx+1}"
+                
+                try:
+                    fig, ax = plt.subplots(figsize=(8, 4))
+                    time_vals = pd.to_numeric(temp_df.get('time', pd.Series()), errors='coerce')
+                    t1_vals = pd.to_numeric(temp_df.get('t1', pd.Series()), errors='coerce')
+                    t2_vals = pd.to_numeric(temp_df.get('t2', pd.Series()), errors='coerce')
+                    t3_vals = pd.to_numeric(temp_df.get('t3', pd.Series()), errors='coerce')
+                    
+                    has_any = False
+                    if t1_vals.notna().any():
+                        valid_mask = time_vals.notna() & t1_vals.notna()
+                        if valid_mask.any():
+                            ax.plot(time_vals[valid_mask], t1_vals[valid_mask], 
+                                   label='T1 (Top)', color='#e74c3c', linewidth=1.5)
+                            has_any = True
+                    if t2_vals.notna().any():
+                        valid_mask = time_vals.notna() & t2_vals.notna()
+                        if valid_mask.any():
+                            ax.plot(time_vals[valid_mask], t2_vals[valid_mask], 
+                                   label='T2 (Middle)', color='#3498db', linewidth=1.5)
+                            has_any = True
+                    if t3_vals.notna().any():
+                        valid_mask = time_vals.notna() & t3_vals.notna()
+                        if valid_mask.any():
+                            ax.plot(time_vals[valid_mask], t3_vals[valid_mask], 
+                                   label='T3 (Bottom)', color='#2ecc71', linewidth=1.5)
+                            has_any = True
+                    
+                    if has_any:
+                        ax.set_xlabel('Time (sec)', fontsize=10)
+                        ax.set_ylabel('Temperature (°C)', fontsize=10)
+                        ax.set_title(f'{build_name} - Temperature Profile', fontsize=12)
+                        ax.legend(loc='best', fontsize=8)
+                        ax.grid(True, alpha=0.3)
+                        plt.tight_layout()
+                        build_buffer = io.BytesIO()
+                        plt.savefig(build_buffer, format='png', dpi=150, bbox_inches='tight')
+                        build_buffer.seek(0)
+                        plt.close(fig)
+                        story.append(Image(build_buffer, width=6*inch, height=3*inch))
+                        story.append(Spacer(1, 0.15*inch))
+                    else:
+                        plt.close(fig)
+                except Exception as e:
+                    story.append(Paragraph(f"<i>Could not generate graph for {build_name}: {str(e)}</i>", styles['Normal']))
         
         # Temperature Data Table based on time intervals
         # Time intervals = (Duration * 1.5) / 10
