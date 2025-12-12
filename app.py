@@ -1440,6 +1440,9 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             ('total_calories', 'Total Calories (cal)', 
              lambda m: m.get('heat_pellet_weight', 0) * m.get('cells_in_series', 0) * m.get('stacks_in_parallel', 0) * m.get('calorific_value_per_gram', 260) if m.get('heat_pellet_weight') and m.get('cells_in_series') and m.get('stacks_in_parallel') else None,
              lambda v: f"{v:.0f}"),
+            ('total_calories_per_gram', 'Total Calories per gram (cal/g)', 
+             lambda m: (m.get('heat_pellet_weight', 0) * m.get('cells_in_series', 0) * m.get('stacks_in_parallel', 0) * m.get('calorific_value_per_gram', 260)) / (m.get('stacks_in_parallel', 0) * m.get('anode_weight_per_cell', 0)) if m.get('heat_pellet_weight') and m.get('cells_in_series') and m.get('stacks_in_parallel') and m.get('anode_weight_per_cell') else None,
+             lambda v: f"{v:.2f}"),
         ]
         
         # Add regular metrics
