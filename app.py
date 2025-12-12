@@ -1677,15 +1677,16 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                 if current_max > 0:
                     ax2.set_ylim(0, current_max * 2)
             
-            # Combine legends
+            # Combine legends - place outside graph
             lines1, labels1 = ax1.get_legend_handles_labels()
             lines2, labels2 = ax2.get_legend_handles_labels()
             if lines1 or lines2:
-                ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', 
-                          fontsize=7, framealpha=0.9)
+                ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', 
+                          bbox_to_anchor=(0, -0.15), fontsize=7, framealpha=0.9, ncol=2)
             
             plt.title('Discharge Curves: Voltage & Current vs Time', fontsize=12)
             plt.tight_layout()
+            plt.subplots_adjust(bottom=0.25)
             
             # Save to buffer
             img_buffer = io.BytesIO()
