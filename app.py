@@ -508,7 +508,122 @@ def load_multi_build_file(uploaded_file):
                 if len(build_data) > 0:
                     results.append((build_data, metadata, standard_params, extended_metadata))
         
-        return results
+        # Extract temperature data (T1, T2, T3) for all builds
+        # Temperature section is below the discharge data, has "Time", "T1", "T2", "T3" headers
+        temperature_data_list = []
+        temp_header_row = None
+        temp_time_col = None
+        
+        # Find the temperature header row (search from bottom up or after discharge data ends)
+        for row_idx in range(len(raw_df)):
+            row = raw_df.iloc[row_idx]
+            row_strings = [str(val).lower().strip() if pd.notna(val) else "" for val in row]
+            
+            # Look for row that has both "time" and "t1" as headers
+            has_time = any('time' == s for s in row_strings)
+            has_t1 = any('t1' == s for s in row_strings)
+            
+            if has_time and has_t1:
+                temp_header_row = row_idx
+                # Find the Time column position for temperature data
+                for col_idx, val in enumerate(row):
+                    if pd.notna(val) and str(val).lower().strip() == 'time':
+                        temp_time_col = col_idx
+                        break
+                break
+        
+        if temp_header_row is not None and temp_time_col is not None:
+            # Extract temperature data for each build
+            for i, section in enumerate(build_sections):
+                start_col = section['start_col']
+                
+                # Determine end column
+                if i + 1 < len(build_sections):
+                    end_col = build_sections[i + 1]['start_col']
+                else:
+                    end_col = len(raw_df.columns)
+                
+                # Find T1, T2, T3 columns for this build
+                temp_header = raw_df.iloc[temp_header_row, start_col:end_col]
+                t1_col = None
+                t2_col = None
+                t3_col = None
+                
+                for col_offset, val in enumerate(temp_header):
+                    if pd.notna(val):
+                        val_str = str(val).lower().strip()
+                        actual_col = start_col + col_offset
+                        if val_str == 't1':
+                            t1_col = actual_col
+                        elif val_str == 't2':
+                            t2_col = actual_col
+                        elif val_str == 't3':
+                            t3_col = actual_col
+                
+                # Extract temperature data rows (starting from row after header)
+                temp_data = {
+                    'time': [],
+                    't1': [],
+                    't2': [],
+                    't3': []
+                }
+                
+                for row_idx in range(temp_header_row + 1, len(raw_df)):
+                    row = raw_df.iloc[row_idx]
+                    
+                    # Get time value (from the shared Time column in first build)
+                    time_val = row.iloc[temp_time_col] if temp_time_col < len(row) else None
+                    
+                    # Skip if no valid time value
+                    if pd.isna(time_val):
+                        continue
+                    
+                    try:
+                        time_val = float(time_val)
+                    except:
+                        continue
+                    
+                    temp_data['time'].append(time_val)
+                    
+                    # Get T1, T2, T3 values (None if empty, NOT zero)
+                    t1_val = row.iloc[t1_col] if t1_col is not None and t1_col < len(row) else None
+                    t2_val = row.iloc[t2_col] if t2_col is not None and t2_col < len(row) else None
+                    t3_val = row.iloc[t3_col] if t3_col is not None and t3_col < len(row) else None
+                    
+                    # Convert to float, keeping None for empty cells
+                    def safe_float(val):
+                        if pd.isna(val):
+                            return None
+                        try:
+                            return float(val)
+                        except:
+                            return None
+                    
+                    temp_data['t1'].append(safe_float(t1_val))
+                    temp_data['t2'].append(safe_float(t2_val))
+                    temp_data['t3'].append(safe_float(t3_val))
+                
+                # Convert to DataFrame if we have data
+                if len(temp_data['time']) > 0:
+                    temp_df = pd.DataFrame(temp_data)
+                    temperature_data_list.append(temp_df)
+                else:
+                    temperature_data_list.append(None)
+        else:
+            # No temperature data found
+            temperature_data_list = [None] * len(results)
+        
+        # Ensure we have same number of temperature datasets as results
+        while len(temperature_data_list) < len(results):
+            temperature_data_list.append(None)
+        
+        # Update results to include temperature data as 5th element
+        updated_results = []
+        for i, result in enumerate(results):
+            temp_data = temperature_data_list[i] if i < len(temperature_data_list) else None
+            updated_results.append(result + (temp_data,))
+        
+        return updated_results
     
     except Exception as e:
         st.error(f"Error loading multi-build file: {str(e)}")
@@ -2658,7 +2773,15 @@ if data_mode == "Upload Files":
                     num_builds = len(build_results)
                     
                     # Initialize session_state for each build
-                    for i, (df, metadata, std_params, ext_meta) in enumerate(build_results):
+                    for i, result in enumerate(build_results):
+                        # Handle both 4-tuple (old) and 5-tuple (new with temp data)
+                        df, metadata, std_params, ext_meta = result[:4]
+                        temp_data = result[4] if len(result) > 4 else None
+                        
+                        # Store temperature data in session state
+                        if temp_data is not None:
+                            st.session_state[f'temperature_data_{i}'] = temp_data
+                        
                         # Update extended metadata session_state
                         if ext_meta:
                             st.session_state[f'anode_weight_{i}'] = float(ext_meta.get('anode_weight_per_cell', 0) or 0)
@@ -2719,7 +2842,10 @@ if data_mode == "Upload Files":
                 build_results = st.session_state['multi_build_results']
                 num_builds = len(build_results)
                 
-                for i, (df, metadata, std_params, ext_meta) in enumerate(build_results):
+                for i, result in enumerate(build_results):
+                    # Handle both 4-tuple (old) and 5-tuple (new with temp data)
+                    df, metadata, std_params, ext_meta = result[:4]
+                    temp_data = result[4] if len(result) > 4 else None
                     build_id = metadata.get('build_id', f'Build {i+1}')
                     battery_code = metadata.get('battery_code', '')
                     temperature = metadata.get('temperature', '')
@@ -2732,6 +2858,23 @@ if data_mode == "Upload Files":
                     
                     st.sidebar.markdown(f"### {build_label}")
                     st.sidebar.caption(f"📊 {len(df)} data points")
+                    
+                    # Show temperature data info if available
+                    if temp_data is not None and len(temp_data) > 0:
+                        t1_count = temp_data['t1'].notna().sum()
+                        t2_count = temp_data['t2'].notna().sum()
+                        t3_count = temp_data['t3'].notna().sum()
+                        temp_info = []
+                        if t1_count > 0:
+                            temp_info.append(f"T1:{t1_count}")
+                        if t2_count > 0:
+                            temp_info.append(f"T2:{t2_count}")
+                        if t3_count > 0:
+                            temp_info.append(f"T3:{t3_count}")
+                        if temp_info:
+                            st.sidebar.caption(f"🌡️ Temperature data: {', '.join(temp_info)} points")
+                        else:
+                            st.sidebar.caption("🌡️ Temperature data: No readings")
                     
                     # Show metadata form for this build
                     with st.sidebar.expander("⚙️ Extended Build Metadata", expanded=False):
@@ -2994,7 +3137,10 @@ if data_mode == "Upload Files":
         if use_multi_build_file and 'multi_build_results' in st.session_state:
             # Multi-build mode: use the parsed results
             build_results = st.session_state['multi_build_results']
-            for i, (df, metadata, std_params, ext_meta) in enumerate(build_results):
+            for i, result in enumerate(build_results):
+                # Handle both 4-tuple (old) and 5-tuple (new with temp data)
+                df, metadata, std_params, ext_meta = result[:4]
+                temp_data = result[4] if len(result) > 4 else None
                 build_id = metadata.get('build_id', f'Build {i+1}')
                 battery_code = metadata.get('battery_code', '')
                 temperature = metadata.get('temperature', '')
