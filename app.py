@@ -1884,26 +1884,56 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                     t2_vals = pd.to_numeric(temp_df.get('t2', pd.Series()), errors='coerce')
                     t3_vals = pd.to_numeric(temp_df.get('t3', pd.Series()), errors='coerce')
                     
-                    # For each time point, find the closest value
+                    # Create clean arrays for interpolation (remove NaN from time)
+                    valid_time_mask = time_vals.notna()
+                    clean_time = time_vals[valid_time_mask].values if valid_time_mask.any() else np.array([])
+                    
+                    # For each time point, interpolate value from curve data
                     for tp in time_points:
-                        # Find the row with time closest to tp
-                        if len(time_vals) > 0 and time_vals.notna().any():
-                            time_diff = (time_vals - tp).abs()
-                            closest_idx = time_diff.idxmin()
+                        t1_str = "-"
+                        t2_str = "-"
+                        t3_str = "-"
+                        
+                        if len(clean_time) > 0:
+                            # Interpolate T1
+                            t1_clean = t1_vals[valid_time_mask]
+                            t1_valid = t1_clean.notna()
+                            if t1_valid.any():
+                                t1_time = clean_time[t1_valid]
+                                t1_data = t1_clean[t1_valid].values
+                                if len(t1_time) > 1 and tp >= t1_time.min() and tp <= t1_time.max():
+                                    t1_interp = np.interp(tp, t1_time, t1_data)
+                                    t1_str = f"{t1_interp:.1f}"
+                                elif len(t1_time) > 0:
+                                    # Use closest value if outside range
+                                    closest_idx = np.abs(t1_time - tp).argmin()
+                                    t1_str = f"{t1_data[closest_idx]:.1f}"
                             
-                            # Only use if within 5 seconds of target time
-                            if time_diff.loc[closest_idx] <= 5:
-                                t1_val = t1_vals.loc[closest_idx] if pd.notna(t1_vals.loc[closest_idx]) else "-"
-                                t2_val = t2_vals.loc[closest_idx] if pd.notna(t2_vals.loc[closest_idx]) else "-"
-                                t3_val = t3_vals.loc[closest_idx] if pd.notna(t3_vals.loc[closest_idx]) else "-"
-                                
-                                t1_str = f"{t1_val:.1f}" if isinstance(t1_val, (int, float)) else "-"
-                                t2_str = f"{t2_val:.1f}" if isinstance(t2_val, (int, float)) else "-"
-                                t3_str = f"{t3_val:.1f}" if isinstance(t3_val, (int, float)) else "-"
-                            else:
-                                t1_str = t2_str = t3_str = "-"
-                        else:
-                            t1_str = t2_str = t3_str = "-"
+                            # Interpolate T2
+                            t2_clean = t2_vals[valid_time_mask]
+                            t2_valid = t2_clean.notna()
+                            if t2_valid.any():
+                                t2_time = clean_time[t2_valid]
+                                t2_data = t2_clean[t2_valid].values
+                                if len(t2_time) > 1 and tp >= t2_time.min() and tp <= t2_time.max():
+                                    t2_interp = np.interp(tp, t2_time, t2_data)
+                                    t2_str = f"{t2_interp:.1f}"
+                                elif len(t2_time) > 0:
+                                    closest_idx = np.abs(t2_time - tp).argmin()
+                                    t2_str = f"{t2_data[closest_idx]:.1f}"
+                            
+                            # Interpolate T3
+                            t3_clean = t3_vals[valid_time_mask]
+                            t3_valid = t3_clean.notna()
+                            if t3_valid.any():
+                                t3_time = clean_time[t3_valid]
+                                t3_data = t3_clean[t3_valid].values
+                                if len(t3_time) > 1 and tp >= t3_time.min() and tp <= t3_time.max():
+                                    t3_interp = np.interp(tp, t3_time, t3_data)
+                                    t3_str = f"{t3_interp:.1f}"
+                                elif len(t3_time) > 0:
+                                    closest_idx = np.abs(t3_time - tp).argmin()
+                                    t3_str = f"{t3_data[closest_idx]:.1f}"
                         
                         temp_table_data.append([
                             Paragraph(str(tp), table_cell_style),
