@@ -372,6 +372,27 @@ def load_multi_build_file(uploaded_file):
         build_sections.sort(key=lambda x: x['start_col'])
         
         
+        # First, find the temperature header row (to limit discharge data extraction)
+        temp_header_row = None
+        temp_time_col = None
+        
+        for row_idx in range(len(raw_df)):
+            row = raw_df.iloc[row_idx]
+            row_strings = [str(val).lower().strip() if pd.notna(val) else "" for val in row]
+            
+            # Look for row that has both "time" and "t1" as headers
+            has_time = any('time' == s for s in row_strings)
+            has_t1 = any('t1' == s for s in row_strings)
+            
+            if has_time and has_t1:
+                temp_header_row = row_idx
+                # Find the Time column position for temperature data
+                for col_idx, val in enumerate(row):
+                    if pd.notna(val) and str(val).lower().strip() == 'time':
+                        temp_time_col = col_idx
+                        break
+                break
+        
         # Now extract data for each build
         results = []
         
@@ -492,8 +513,9 @@ def load_multi_build_file(uploaded_file):
                     col_names.append(str(val).strip())
             
             if len(data_cols) >= 2:  # Need at least Time and Voltage
-                # Extract the data rows
-                build_data = raw_df.iloc[data_start_row + 1:, data_cols].copy()
+                # Extract the data rows (stop before temperature section if it exists)
+                data_end_row = temp_header_row if temp_header_row is not None else len(raw_df)
+                build_data = raw_df.iloc[data_start_row + 1:data_end_row, data_cols].copy()
                 build_data.columns = col_names
                 
                 # Drop empty rows
@@ -502,35 +524,15 @@ def load_multi_build_file(uploaded_file):
                 
                 # Convert numeric columns
                 for col in build_data.columns:
-                    build_data[col] = pd.to_numeric(build_data[col], errors='ignore')
+                    build_data[col] = pd.to_numeric(build_data[col], errors='coerce')
                 
                 # Only add if we have actual data
                 if len(build_data) > 0:
                     results.append((build_data, metadata, standard_params, extended_metadata))
         
         # Extract temperature data (T1, T2, T3) for all builds
-        # Temperature section is below the discharge data, has "Time", "T1", "T2", "T3" headers
+        # Uses temp_header_row and temp_time_col found earlier
         temperature_data_list = []
-        temp_header_row = None
-        temp_time_col = None
-        
-        # Find the temperature header row (search from bottom up or after discharge data ends)
-        for row_idx in range(len(raw_df)):
-            row = raw_df.iloc[row_idx]
-            row_strings = [str(val).lower().strip() if pd.notna(val) else "" for val in row]
-            
-            # Look for row that has both "time" and "t1" as headers
-            has_time = any('time' == s for s in row_strings)
-            has_t1 = any('t1' == s for s in row_strings)
-            
-            if has_time and has_t1:
-                temp_header_row = row_idx
-                # Find the Time column position for temperature data
-                for col_idx, val in enumerate(row):
-                    if pd.notna(val) and str(val).lower().strip() == 'time':
-                        temp_time_col = col_idx
-                        break
-                break
         
         if temp_header_row is not None and temp_time_col is not None:
             # Extract temperature data for each build
