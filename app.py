@@ -1292,14 +1292,28 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
             ('cells_in_series', 'Cells in Series', lambda v: f"{int(v)}"),
             ('stacks_in_parallel', 'Stacks in Parallel', lambda v: f"{int(v)}"),
             ('calorific_value_per_gram', 'Calorific Value (cal/g)', lambda v: f"{v:.0f}"),
-            ('total_anode_weight', 'Total Anode (g)', lambda v: f"{v:.2f}"),
-            ('total_cathode_weight', 'Total Cathode (g)', lambda v: f"{v:.2f}"),
-            ('total_heat_pellet_weight', 'Total Heat Pellet (g)', lambda v: f"{v:.2f}"),
-            ('total_calories', 'Total Calories (cal)', lambda v: f"{v:.0f}"),
-            ('total_stack_weight', 'Total Stack (g)', lambda v: f"{v:.2f}"),
-            ('total_calorific_value', 'Total Calorific (kJ)', lambda v: f"{v:.2f}"),
         ]
         
+        # Calculated metrics (formula-based)
+        calculated_metrics = [
+            ('total_anode_weight_calc', 'Total Anode Weight (g)', 
+             lambda m: m.get('stacks_in_parallel', 0) * m.get('anode_weight_per_cell', 0) if m.get('stacks_in_parallel') and m.get('anode_weight_per_cell') else None,
+             lambda v: f"{v:.2f}"),
+            ('total_cathode_weight_calc', 'Total Cathode Weight (g)', 
+             lambda m: m.get('stacks_in_parallel', 0) * m.get('cathode_weight_per_cell', 0) if m.get('stacks_in_parallel') and m.get('cathode_weight_per_cell') else None,
+             lambda v: f"{v:.2f}"),
+            ('total_heat_pellet_weight', 'Total Heat Pellet (g)', 
+             lambda m: m.get('heat_pellet_weight', 0) * m.get('cells_in_series', 0) * m.get('stacks_in_parallel', 0) if m.get('heat_pellet_weight') and m.get('cells_in_series') and m.get('stacks_in_parallel') else None,
+             lambda v: f"{v:.2f}"),
+            ('total_electrolyte_calc', 'Total Electrolyte (g)', 
+             lambda m: m.get('electrolyte_weight', 0) * m.get('cells_in_series', 0) * m.get('stacks_in_parallel', 0) if m.get('electrolyte_weight') and m.get('cells_in_series') and m.get('stacks_in_parallel') else None,
+             lambda v: f"{v:.2f}"),
+            ('total_calories', 'Total Calories (cal)', 
+             lambda m: m.get('heat_pellet_weight', 0) * m.get('cells_in_series', 0) * m.get('stacks_in_parallel', 0) * m.get('calorific_value_per_gram', 260) if m.get('heat_pellet_weight') and m.get('cells_in_series') and m.get('stacks_in_parallel') else None,
+             lambda v: f"{v:.0f}"),
+        ]
+        
+        # Add regular metrics
         for key, label, formatter in metric_keys:
             has_any_value = any(
                 ext_meta and ext_meta.get(key) 
@@ -1310,6 +1324,19 @@ def generate_pdf_report(metrics_df, build_names, metadata_list,
                 for ext_meta in extended_metadata_list:
                     val = ext_meta.get(key) if ext_meta else None
                     row.append(Paragraph(formatter(val) if val else "-", table_cell_style))
+                ext_data.append(row)
+        
+        # Add calculated metrics
+        for key, label, calc_func, formatter in calculated_metrics:
+            has_any_value = any(
+                ext_meta and calc_func(ext_meta) is not None
+                for ext_meta in extended_metadata_list
+            )
+            if has_any_value:
+                row = [Paragraph(label, table_cell_left_style)]
+                for ext_meta in extended_metadata_list:
+                    val = calc_func(ext_meta) if ext_meta else None
+                    row.append(Paragraph(formatter(val) if val is not None else "-", table_cell_style))
                 ext_data.append(row)
         
         if len(ext_data) > 1:
