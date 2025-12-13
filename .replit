@@ -2,7 +2,7 @@ modules = ["python-3.11", "postgresql-16"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["freetype", "glibcLocales", "libxcrypt", "pkg-config", "xsimd"]
+packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "libxcrypt", "pkg-config", "qhull", "tcl", "tk", "xsimd"]
 
 [deployment]
 deploymentTarget = "autoscale"
@@ -35,35 +35,3 @@ outputType = "webview"
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 33255
-externalPort = 3003
-
-[[ports]]
-localPort = 33473
-externalPort = 3001
-
-[[ports]]
-localPort = 37793
-externalPort = 5000
-
-[[ports]]
-localPort = 39993
-externalPort = 3002
-
-[[ports]]
-localPort = 40327
-externalPort = 4200
-
-[[ports]]
-localPort = 40801
-externalPort = 3000
-
-[[ports]]
-localPort = 44471
-externalPort = 6000
-
-[[ports]]
-localPort = 45437
-externalPort = 5173

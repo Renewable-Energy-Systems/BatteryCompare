@@ -1,0 +1,26 @@
+For every new build, of 1 type of battery. Keep the values of previous build.
+We'll change information, as required.
+
+We have provided, the anode of a single cell.
+The anode weight of all cells in parallel is anode weight, multiplied by the no. of stacks in parallel.
+
+The anode weight for computing, the ampere hours per gram of anode weight is the actual ampere sec's obtained during discharge divided by the anode weight of all cells in parallel.
+
+
+We have provided, the cathode of a single cell.
+The cathode weight of all cells in parallel is cathode weight, multiplied by the no. of stacks in parallel.
+
+The cathode weight for computing, the ampere hours per gram of cathode weight is the actual ampere sec's obtained during discharge divided by the cathode weight of all cells in parallel.
+
+The results shown for ampere sec's / gram is not correct.
+The following is correct method.
+-> The ampere sec's is the value of the current multiplied by the time difference between 2 time intervals. This should be computed for the entire duration it takes the battery to reach cut-off voltage. This duration, is the actual duration of the discharge.
+
+
+->  Value per gram Stack (kJ/g) is not applicable. Please, remove it.
+
+The discharge curve analysis is not giving me any actionable inputs. We would like to understand, the region or time duration during which the discharge curve had reseably constant Delta V / Delta T. The reseonably constant Delta V/ Delta T is to be accessed by you as the time duration, during which the mean Delta V/ Delta T did not deviate by more than +/-5%. The range is to be specified in time duration from which time to which time.
+
+Give a correlation between actual duration and total anode weight of all cells in parallel and cathode weight of cells in parallel and total calorific value. Please, provide in the report the actual values taken for each of these items when computing correlation.
+The correlation is to be computed for all builds of one type, whose data is available. 
+

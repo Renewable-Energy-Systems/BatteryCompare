@@ -1,0 +1,169 @@
+1️⃣ Analyze the file thoroughly
+
+Go through every line of app.py.
+
+Identify:
+
+Any syntax errors
+
+Any obvious or likely runtime errors
+
+Any misuses of Streamlit’s UploadedFile (especially .file_id)
+
+Any inconsistent or conflicting function definitions
+
+Any duplicated blocks (imports, models, helper functions, etc.)
+
+Do not start rewriting blindly; understand the file structure first.
+
+2️⃣ Fix the UploadedFile / .file_id error safely
+
+The app may use uploaded_file.file_id directly.
+In many Streamlit versions this raises:
+
+AttributeError: 'UploadedFile' object has no attribute 'file_id'
+
+Required behavior:
+
+All unique identification of uploaded files must go through this helper:
+
+def get_file_id(uploaded_file):
+    if uploaded_file is None:
+        return None
+    if hasattr(uploaded_file, "file_id"):
+        return uploaded_file.file_id
+    if hasattr(uploaded_file, "id"):
+        return uploaded_file.id
+    return f"{uploaded_file.name}_{uploaded_file.size}"
+
+Your tasks:
+
+Ensure there is exactly one definition of get_file_id in the file.
+
+Replace all direct uses of:
+
+uploaded_file.file_id
+
+uploaded_file.id
+with get_file_id(uploaded_file).
+
+Where session state keys are constructed like:
+
+f'file_processed_{i}_{uploaded_file.file_id}'
+
+
+change to:
+
+file_id = get_file_id(uploaded_file)
+processed_key = f'file_processed_{i}_{file_id}'
+
+
+and use processed_key consistently.
+
+After processing each file, make sure we set:
+
+st.session_state[processed_key] = True
+
+3️⃣ Remove duplicated blocks and keep one canonical version
+
+The file currently has duplicated code (imports, models, helper functions, etc.).
+
+You must:
+
+Identify all duplicate definitions, such as (but not limited to):
+
+Import sections
+
+Database setup (DATABASE_URL, engine, SessionLocal / Session, Base)
+
+The SavedComparison model
+
+Utility / helper functions:
+
+safe_scalar
+
+get_file_id
+
+extract_metadata_from_file or similar
+
+load_data
+
+load_multi_build_file
+
+detect_columns
+
+detect_time_unit_and_convert
+
+calculate_advanced_analytics
+
+generate_pdf_report
+
+Any other repeated helper
+
+Any duplicated sections of Streamlit UI logic
+
+For each set of duplicates:
+
+Keep one single, best / most complete / most recent implementation.
+
+Delete the older / unused / redundant copies.
+
+Make sure all call sites match the final function signatures you keep.
+
+Ensure imports, DB model, and helpers appear only once, near the top in a logical order.
+
+4️⃣ Clean up and make the app consistent
+
+Without changing the business logic, do the following:
+
+Remove dead code and obviously unused variables, if any.
+
+Ensure there are no unreachable branches that obviously conflict with the final structure.
+
+Make sure all functions are defined before they are used.
+
+Ensure the overall control flow of the Streamlit app is clean and not duplicated:
+
+Single, clear “main” layout / entry point
+
+No accidental double rendering of the same page
+
+Do not:
+
+Change the core functionality or features.
+
+Change user-facing text or labels except where strictly necessary for clarity.
+
+Change variable names unless absolutely required for correctness.
+
+5️⃣ Keep behavior the same
+
+Very important:
+
+The app should still:
+
+Load and parse uploaded CSV/Excel files.
+
+Extract metadata and use st.session_state to pre-fill form fields where applicable.
+
+Handle multiple builds, comparisons, and analytics.
+
+Work with the existing database model (SavedComparison) and SQLAlchemy.
+
+All UI flows (sidebar controls, number of builds, comparison, etc.) should remain functionally the same.
+
+Your job is cleanup + correctness, not feature redesign.
+
+6️⃣ Final output format
+
+When you’re done:
+
+Output the complete, corrected app.py file.
+
+Then provide a short summary with:
+
+A bullet list of the main errors fixed (especially .file_id issues).
+
+A bullet list of duplicate blocks removed (which sections/functions you consolidated).
+
+Any notable behavioral or structural changes that were necessary for correctness.
